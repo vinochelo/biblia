@@ -170,10 +170,44 @@ const mayPlan: Reading[] = [
     { month: 5, day: 31, passages: ["Juan 10", "1Samuel 26, 27", "Salmos 59"] }
 ];
 
+const junePlan: Reading[] = [
+    { month: 6, day: 1, passages: ["Juan 11", "1Samuel 28, 29", "Salmos 60"] },
+    { month: 6, day: 2, passages: ["Juan 12", "1Samuel 30, 31"] },
+    { month: 6, day: 3, passages: ["Juan 13", "1Crónicas 1, 2", "Proverbios 27"] },
+    { month: 6, day: 4, passages: ["Juan 14", "1Crónicas 3, 4"] },
+    { month: 6, day: 5, passages: ["Juan 15", "1Crónicas 5, 6", "Salmos 61"] },
+    { month: 6, day: 6, passages: ["Juan 16", "1Crónicas 7, 8"] },
+    { month: 6, day: 7, passages: ["Juan 17", "1Crónicas 9, 10", "Salmos 62"] },
+    { month: 6, day: 8, passages: ["Juan 18", "2Samuel 1, 2"] },
+    { month: 6, day: 9, passages: ["Juan 19", "2Samuel 3, 4", "Proverbios 28"] },
+    { month: 6, day: 10, passages: ["Juan 20", "2Samuel 5, 6"] },
+    { month: 6, day: 11, passages: ["Juan 21", "2Samuel 7, 8", "Salmos 63"] },
+    { month: 6, day: 12, passages: ["Gálatas 1", "2Samuel 9, 10"] },
+    { month: 6, day: 13, passages: ["Gálatas 2", "2Samuel 11, 12", "Salmos 64"] },
+    { month: 6, day: 14, passages: ["Gálatas 3", "2Samuel 13, 14", "Salmos 65"] },
+    { month: 6, day: 15, passages: ["Gálatas 4", "2Samuel 15, 16", "Proverbios 29"] },
+    { month: 6, day: 16, passages: ["Gálatas 5", "2Samuel 17, 18"] },
+    { month: 6, day: 17, passages: ["Gálatas 6", "2Samuel 19, 20", "Salmos 66"] },
+    { month: 6, day: 18, passages: ["Efesios 1", "2Samuel 21, 22"] },
+    { month: 6, day: 19, passages: ["Efesios 2", "2Samuel 23, 24", "Salmos 67"] },
+    { month: 6, day: 20, passages: ["Efesios 3", "1Reyes 1, 2"] },
+    { month: 6, day: 21, passages: ["Efesios 4", "1Crónicas 11, 12", "Proverbios 30"] },
+    { month: 6, day: 22, passages: ["Efesios 5", "1Crónicas 13, 14, 15"] },
+    { month: 6, day: 23, passages: ["Efesios 6", "1Crónicas 16, 17", "Salmos 68"] },
+    { month: 6, day: 24, passages: ["Filipenses 1", "1Crónicas 18, 19", "Salmos 69"] },
+    { month: 6, day: 25, passages: ["Filipenses 2", "1Crónicas 20, 21, 22"] },
+    { month: 6, day: 26, passages: ["Filipenses 3", "1Crónicas 23, 24", "Salmos 70"] },
+    { month: 6, day: 27, passages: ["Filipenses 4", "1Crónicas 25, 26", "Proverbios 31"] },
+    { month: 6, day: 28, passages: ["Colosenses 1", "1Crónicas 27, 28, 29"] },
+    { month: 6, day: 29, passages: ["Colosenses 2", "1Reyes 3, 4", "Salmos 71"] },
+    { month: 6, day: 30, passages: ["Colosenses 3", "Cantares 1, 2, 3"] },
+];
+
 export const studyPlan: Reading[] = [
     ...januaryPlan,
     ...februaryPlan,
     ...marchPlan,
     ...aprilPlan,
-    ...mayPlan
+    ...mayPlan,
+    ...junePlan,
 ];
