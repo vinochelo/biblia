@@ -326,8 +326,8 @@ const octoberPlan: Reading[] = [
     { month: 10, day: 19, passages: ["1Pedro 5", "2Reyes 22, 23"] },
     { month: 10, day: 20, passages: ["2Pedro 1", "2Crónicas 36:1-8", "Salmos 118"] },
     { month: 10, day: 21, passages: ["2Pedro 2", "Daniel 1, 2"] },
-    { month: 10, day: 22, passages: ["2Pedro 3", "Daniel 3, 4", "Sal. 119:1-80"] },
-    { month: 10, day: 23, passages: ["1Juan 1", "Daniel 5, 6", "Sal. 119:81-176"] },
+    { month: 10, day: 22, passages: ["2Pedro 3", "Daniel 3, 4", "Salmos 119:1-80"] },
+    { month: 10, day: 23, passages: ["1Juan 1", "Daniel 5, 6", "Salmos 119:81-176"] },
     { month: 10, day: 24, passages: ["1Juan 2", "Daniel 7, 8", "Proverbios 20"] },
     { month: 10, day: 25, passages: ["1Juan 3", "Daniel 9, 10"] },
     { month: 10, day: 26, passages: ["1Juan 4", "Daniel 11, 12", "Salmos 120"] },
@@ -338,6 +338,38 @@ const octoberPlan: Reading[] = [
     { month: 10, day: 31, passages: ["Marcos 1", "Ezequiel 7, 8", "Salmos 121"] }
 ];
 
+const novemberPlan: Reading[] = [
+    { month: 11, day: 1, passages: ["Marcos 2", "Ezequiel 9, 10", "Salmos 122"] },
+    { month: 11, day: 2, passages: ["Marcos 3", "Ezequiel 11, 12", "Proverbios 22"] },
+    { month: 11, day: 3, passages: ["Marcos 4", "Ezequiel 13, 14"] },
+    { month: 11, day: 4, passages: ["Marcos 5", "Ezequiel 15, 16", "Salmos 123"] },
+    { month: 11, day: 5, passages: ["Marcos 6", "Ezequiel 17, 18"] },
+    { month: 11, day: 6, passages: ["Marcos 7", "Ezequiel 19, 20", "Salmos 124"] },
+    { month: 11, day: 7, passages: ["Marcos 8", "Ezequiel 21, 22", "Salmos 125"] },
+    { month: 11, day: 8, passages: ["Marcos 9", "Ezequiel 23, 24", "Proverbios 23"] },
+    { month: 11, day: 9, passages: ["Marcos 10", "Ezequiel 25, 26"] },
+    { month: 11, day: 10, passages: ["Marcos 11", "Ezequiel 27, 28", "Salmos 126"] },
+    { month: 11, day: 11, passages: ["Marcos 12", "Ezequiel 29, 30"] },
+    { month: 11, day: 12, passages: ["Marcos 13", "Ezequiel 31, 32", "Salmos 127"] },
+    { month: 11, day: 13, passages: ["Marcos 14", "Ezequiel 33, 34", "Salmos 128"] },
+    { month: 11, day: 14, passages: ["Marcos 15", "Ezequiel 35, 36", "Proverbios 24"] },
+    { month: 11, day: 15, passages: ["Marcos 16", "Ezequiel 37, 38"] },
+    { month: 11, day: 16, passages: ["Apocalipsis 1", "Ezequiel 39, 40", "Salmos 129"] },
+    { month: 11, day: 17, passages: ["Apocalipsis 2", "Ezequiel 41, 42"] },
+    { month: 11, day: 18, passages: ["Apocalipsis 3", "Ezequiel 43, 44", "Salmos 130"] },
+    { month: 11, day: 19, passages: ["Apocalipsis 4", "Ezequiel 45, 46", "Proverbios 25"] },
+    { month: 11, day: 20, passages: ["Apocalipsis 5", "Ezequiel 47, 48", "Salmos 131"] },
+    { month: 11, day: 21, passages: ["Apocalipsis 6", "Jeremías 45, 25"] },
+    { month: 11, day: 22, passages: ["Apocalipsis 7", "Jeremías 46, 47", "Salmos 132"] },
+    { month: 11, day: 23, passages: ["Apocalipsis 8", "Jeremías 48, 49"] },
+    { month: 11, day: 24, passages: ["Apocalipsis 9", "2Crónicas 36:11-21", "Salmos 133"] },
+    { month: 11, day: 25, passages: ["Apocalipsis 10", "Jeremías 27, 28, 29"] },
+    { month: 11, day: 26, passages: ["Apocalipsis 11", "Jeremías 50, 51", "Salmos 134"] },
+    { month: 11, day: 27, passages: ["Apocalipsis 12", "Jeremías 30, 31", "Proverbios 26"] },
+    { month: 11, day: 28, passages: ["Apocalipsis 13", "Jeremías 32, 33", "Salmos 135"] },
+    { month: 11, day: 29, passages: ["Apocalipsis 14", "Jeremías 21, 34"] },
+    { month: 11, day: 30, passages: ["Apocalipsis 15", "Jeremías 37, 38", "Salmos 136"] }
+];
 
 export const studyPlan: Reading[] = [
     ...januaryPlan,
@@ -350,4 +382,5 @@ export const studyPlan: Reading[] = [
     ...augustPlan,
     ...septemberPlan,
     ...octoberPlan,
+    ...novemberPlan,
 ];
