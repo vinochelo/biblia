@@ -24,7 +24,7 @@ export function VerseSearch() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState<string | null>("hHfw2xKKsVSS1wuy9nGe7");
 
   useEffect(() => {
     const key = localStorage.getItem("bible-api-key");
