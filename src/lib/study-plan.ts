@@ -304,6 +304,40 @@ const septemberPlan: Reading[] = [
     { month: 9, day: 30, passages: ["Juan 12", "2Reyes 20, 21", "Proverbios 16"] }
 ];
 
+const octoberPlan: Reading[] = [
+    { month: 10, day: 1, passages: ["Juan 13", "2Crónicas 33, 34", "Salmos 110"] },
+    { month: 10, day: 2, passages: ["Juan 14", "Sofonías 1, 2, 3"] },
+    { month: 10, day: 3, passages: ["Juan 15", "Nahúm 1, 2, 3"] },
+    { month: 10, day: 4, passages: ["Juan 16", "2Crónicas 35", "Proverbios 17"] },
+    { month: 10, day: 5, passages: ["Juan 17", "Habacuc 1, 2, 3"] },
+    { month: 10, day: 6, passages: ["Juan 18", "Jeremías 1, 2", "Salmos 111"] },
+    { month: 10, day: 7, passages: ["Juan 19", "Jeremías 3, 4", "Salmos 112"] },
+    { month: 10, day: 8, passages: ["Juan 20", "Jeremías 5, 6"] },
+    { month: 10, day: 9, passages: ["Juan 21", "Jeremías 11, 12", "Salmos 113"] },
+    { month: 10, day: 10, passages: ["Santiago 1", "Jeremías 26", "Proverbios 18"] },
+    { month: 10, day: 11, passages: ["Santiago 2", "Jeremías 7, 8"] },
+    { month: 10, day: 12, passages: ["Santiago 3", "Jeremías 9, 10", "Salmos 114"] },
+    { month: 10, day: 13, passages: ["Santiago 4", "Jeremías 14, 15"] },
+    { month: 10, day: 14, passages: ["Santiago 5", "Jeremías 16, 17", "Salmos 115"] },
+    { month: 10, day: 15, passages: ["1Pedro 1", "Jeremías 18, 19, 20"] },
+    { month: 10, day: 16, passages: ["1Pedro 2", "Jeremías 35, 36", "Salmos 116"] },
+    { month: 10, day: 17, passages: ["1Pedro 3", "Jeremías 13, 22", "Proverbios 19"] },
+    { month: 10, day: 18, passages: ["1Pedro 4", "Jeremías 23, 24", "Salmos 117"] },
+    { month: 10, day: 19, passages: ["1Pedro 5", "2Reyes 22, 23"] },
+    { month: 10, day: 20, passages: ["2Pedro 1", "2Crónicas 36:1-8", "Salmos 118"] },
+    { month: 10, day: 21, passages: ["2Pedro 2", "Daniel 1, 2"] },
+    { month: 10, day: 22, passages: ["2Pedro 3", "Daniel 3, 4", "Sal. 119:1-80"] },
+    { month: 10, day: 23, passages: ["1Juan 1", "Daniel 5, 6", "Sal. 119:81-176"] },
+    { month: 10, day: 24, passages: ["1Juan 2", "Daniel 7, 8", "Proverbios 20"] },
+    { month: 10, day: 25, passages: ["1Juan 3", "Daniel 9, 10"] },
+    { month: 10, day: 26, passages: ["1Juan 4", "Daniel 11, 12", "Salmos 120"] },
+    { month: 10, day: 27, passages: ["1Juan 5", "2Reyes 24, 25"] },
+    { month: 10, day: 28, passages: ["2Juan 1", "2Crónicas 36:9-10", "Proverbios 21"] },
+    { month: 10, day: 29, passages: ["3Juan 1", "Ezequiel 1, 2, 3"] },
+    { month: 10, day: 30, passages: ["Judas 1", "Ezequiel 4, 5, 6"] },
+    { month: 10, day: 31, passages: ["Marcos 1", "Ezequiel 7, 8", "Salmos 121"] }
+];
+
 
 export const studyPlan: Reading[] = [
     ...januaryPlan,
@@ -315,4 +349,5 @@ export const studyPlan: Reading[] = [
     ...julyPlan,
     ...augustPlan,
     ...septemberPlan,
+    ...octoberPlan,
 ];
