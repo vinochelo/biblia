@@ -26,17 +26,20 @@ export async function searchVerses(
     });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("API Error:", response.status, errorData);
-        if (response.status === 401) {
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
+        console.error("API Error:", response.status, errorMessage);
+        
+        if (response.status === 401 || (typeof errorMessage === 'string' && errorMessage.includes('API key'))) {
              return { error: 'Clave API no válida o sin permisos. Verifica tu clave e inténtalo de nuevo.' };
         }
-        return { error: `Error de la API: ${errorData.message || response.statusText}` };
+
+        return { error: `Error de la API: ${errorMessage}` };
     }
 
     const data = await response.json();
 
-    if (data.data.total === 0) {
+    if (!data.data || data.data.total === 0) {
       return { verses: [], total: 0, bibleId: versionId };
     }
 
