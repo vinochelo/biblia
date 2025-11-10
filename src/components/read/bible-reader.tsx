@@ -1,10 +1,11 @@
+
 "use client";
 
 import { getBooks, getChapters, getChapter } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { Book, ChapterSummary, Chapter } from "@/lib/types";
 import { Loader2, Terminal } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Select,
   SelectContent,
@@ -12,10 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function BibleReader() {
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -38,6 +38,41 @@ export function BibleReader() {
     setApiKey(key);
   }, []);
 
+  const fetchChapterContent = useCallback(async (versionId: string, chapterId: string, key: string) => {
+    setIsLoading(p => ({ ...p, content: true }));
+    setError(null);
+    setChapterContent(null);
+
+    const response = await getChapter(versionId, chapterId, key);
+    if ("error" in response) {
+      setError(response.error);
+    } else {
+      setChapterContent(response);
+    }
+    setIsLoading(p => ({ ...p, content: false }));
+  }, []);
+
+  const fetchChapters = useCallback(async (versionId: string, bookId: string, key: string) => {
+    setIsLoading(p => ({ ...p, chapters: true }));
+    setError(null);
+    
+    const response = await getChapters(versionId, bookId, key);
+    if ("error" in response) {
+      setError(response.error);
+      setChapters([]);
+    } else {
+      setChapters(response);
+      const currentChapterStillExists = response.some(c => c.id === selectedChapter);
+      if (selectedChapter && currentChapterStillExists) {
+        fetchChapterContent(versionId, selectedChapter, key);
+      } else {
+        setSelectedChapter(null);
+        setChapterContent(null);
+      }
+    }
+    setIsLoading(p => ({ ...p, chapters: false }));
+  }, [selectedChapter, fetchChapterContent]);
+
   useEffect(() => {
     if (!apiKey) {
       setError("Por favor, configura tu clave API en la página de configuración.");
@@ -45,56 +80,47 @@ export function BibleReader() {
     }
     setError(null);
     setIsLoading(p => ({ ...p, books: true }));
-    setBooks([]);
-    setSelectedBook(null);
-
+    
     async function fetchBooks() {
       const response = await getBooks(version, apiKey!);
       if ("error" in response) {
         setError(response.error);
+        setBooks([]);
+        setChapters([]);
+        setChapterContent(null);
+        setSelectedBook(null);
+        setSelectedChapter(null);
       } else {
         setBooks(response);
+        const currentBookStillExists = response.some(b => b.id === selectedBook);
+        if (selectedBook && currentBookStillExists) {
+            fetchChapters(version, selectedBook, apiKey!);
+        } else {
+            setChapters([]);
+            setChapterContent(null);
+            setSelectedBook(null);
+            setSelectedChapter(null);
+        }
       }
       setIsLoading(p => ({ ...p, books: false }));
     }
     fetchBooks();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, apiKey]);
 
   const handleBookChange = async (bookId: string) => {
     setSelectedBook(bookId);
+    setChapters([]);
     setSelectedChapter(null);
     setChapterContent(null);
-    setChapters([]);
-
     if (!apiKey) return;
-
-    setIsLoading(p => ({ ...p, chapters: true }));
-    setError(null);
-    
-    const response = await getChapters(version, bookId, apiKey);
-    if ("error" in response) {
-      setError(response.error);
-    } else {
-      setChapters(response);
-    }
-    setIsLoading(p => ({ ...p, chapters: false }));
+    fetchChapters(version, bookId, apiKey);
   };
 
   const handleChapterChange = async (chapterId: string) => {
     setSelectedChapter(chapterId);
     if (!apiKey) return;
-
-    setIsLoading(p => ({ ...p, content: true }));
-    setError(null);
-    setChapterContent(null);
-
-    const response = await getChapter(version, chapterId, apiKey);
-    if ("error" in response) {
-      setError(response.error);
-    } else {
-      setChapterContent(response);
-    }
-    setIsLoading(p => ({ ...p, content: false }));
+    fetchChapterContent(version, chapterId, apiKey);
   };
 
   return (
@@ -107,7 +133,7 @@ export function BibleReader() {
                 <SelectContent>
                     {bibleVersions.map((v) => (
                     <SelectItem key={v.id} value={v.id}>
-                        {v.abbreviation}
+                        {v.abbreviation} ({v.name})
                     </SelectItem>
                     ))}
                 </SelectContent>

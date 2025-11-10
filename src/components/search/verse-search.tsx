@@ -1,3 +1,4 @@
+
 "use client";
 
 import { searchVerses } from "@/lib/actions";
@@ -87,13 +88,13 @@ export function VerseSearch() {
           />
         </div>
         <Select value={version} onValueChange={setVersion}>
-          <SelectTrigger className="w-full sm:w-[180px] h-12">
+          <SelectTrigger className="w-full sm:w-[220px] h-12">
             <SelectValue placeholder="Seleccionar versión" />
           </SelectTrigger>
           <SelectContent>
             {bibleVersions.map((v) => (
               <SelectItem key={v.id} value={v.id}>
-                {v.abbreviation}
+                {v.abbreviation} ({v.name})
               </SelectItem>
             ))}
           </SelectContent>

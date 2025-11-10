@@ -1,3 +1,4 @@
+
 import type { SearchResult } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { bibleVersions } from "@/lib/data";
@@ -28,7 +29,7 @@ export function SearchResults({ results }: SearchResultsProps) {
             <CardContent>
               <div 
                 className="leading-relaxed text-lg font-body"
-                dangerouslySetInnerHTML={{ __html: verse.text }}
+                dangerouslySetInnerHTML={{ __html: verse.text.replace(/<b/g, '<strong').replace(/<\/b>/g, '</strong>') }}
               />
             </CardContent>
           </Card>
