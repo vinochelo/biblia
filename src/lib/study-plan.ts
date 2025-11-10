@@ -69,7 +69,42 @@ const februaryPlan: Reading[] = [
     { month: 2, day: 28, passages: ["Marcos 3", "Éxodo 27, 28", "Proverbios 11"] }
 ];
 
+const marchPlan: Reading[] = [
+    { month: 3, day: 1, passages: ["Marcos 4", "Éxodo 29, 30", "Salmos 24"] },
+    { month: 3, day: 2, passages: ["Marcos 5", "Éxodo 31, 32"] },
+    { month: 3, day: 3, passages: ["Marcos 6", "Éxodo 33, 34", "Proverbios 12"] },
+    { month: 3, day: 4, passages: ["Marcos 7", "Éxodo 35, 36"] },
+    { month: 3, day: 5, passages: ["Marcos 8", "Éxodo 37, 38", "Salmos 25"] },
+    { month: 3, day: 6, passages: ["Marcos 9", "Éxodo 39, 40"] },
+    { month: 3, day: 7, passages: ["Marcos 10", "Levítico 1, 2, 3", "Salmos 26"] },
+    { month: 3, day: 8, passages: ["Marcos 11", "Levítico 4, 5"] },
+    { month: 3, day: 9, passages: ["Marcos 12", "Levítico 6, 7", "Proverbios 13"] },
+    { month: 3, day: 10, passages: ["Marcos 13", "Levítico 8, 9"] },
+    { month: 3, day: 11, passages: ["Marcos 14", "Levítico 10, 11", "Salmos 27"] },
+    { month: 3, day: 12, passages: ["Marcos 15", "Levítico 12, 13"] },
+    { month: 3, day: 13, passages: ["Marcos 16", "Levítico 14, 15", "Salmos 28"] },
+    { month: 3, day: 14, passages: ["Romanos 1", "Levítico 16, 17", "Proverbios 14"] },
+    { month: 3, day: 15, passages: ["Romanos 2", "Levítico 18, 19", "Salmos 29"] },
+    { month: 3, day: 16, passages: ["Romanos 3", "Levítico 20, 21"] },
+    { month: 3, day: 17, passages: ["Romanos 4", "Levítico 22, 23", "Proverbios 15"] },
+    { month: 3, day: 18, passages: ["Romanos 5", "Levítico 24, 25"] },
+    { month: 3, day: 19, passages: ["Romanos 6", "Levítico 26, 27", "Salmos 30"] },
+    { month: 3, day: 20, passages: ["Romanos 7", "Números 1, 2"] },
+    { month: 3, day: 21, passages: ["Romanos 8", "Números 3, 4", "Salmos 31"] },
+    { month: 3, day: 22, passages: ["Romanos 9", "Números 5, 6"] },
+    { month: 3, day: 23, passages: ["Romanos 10", "Números 7, 8", "Proverbios 16"] },
+    { month: 3, day: 24, passages: ["Romanos 11", "Números 9, 10", "Salmos 32"] },
+    { month: 3, day: 25, passages: ["Romanos 12", "Números 11, 12", "Salmos 33"] },
+    { month: 3, day: 26, passages: ["Romanos 13", "Números 13, 14"] },
+    { month: 3, day: 27, passages: ["Romanos 14", "Números 15, 16", "Salmos 34"] },
+    { month: 3, day: 28, passages: ["Romanos 15", "Números 17, 18"] },
+    { month: 3, day: 29, passages: ["Romanos 16", "Números 19, 20", "Proverbios 17"] },
+    { month: 3, day: 30, passages: ["Lucas 1", "Números 21, 22"] },
+    { month: 3, day: 31, passages: ["Lucas 2", "Números 23, 24", "Salmos 35"] }
+];
+
 export const studyPlan: Reading[] = [
     ...januaryPlan,
-    ...februaryPlan
+    ...februaryPlan,
+    ...marchPlan
 ];
