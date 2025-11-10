@@ -22,21 +22,21 @@ const januaryPlan: Reading[] = [
     { month: 1, day: 14, passages: ["Mateo 14", "Job 18, 19", "Salmos 6"] },
     { month: 1, day: 15, passages: ["Mateo 15", "Job 20, 21"] },
     { month: 1, day: 16, passages: ["Mateo 16", "Job 22, 23, 24"] },
-    { month: 1, day: 17, passages: ["Mateo 17", "Job 25, 26, 27", "Salmos 7"] },
-    { month: 1, day: 18, passages: ["Mateo 18", "Job 28, 29"] },
-    { month: 1, day: 19, passages: ["Mateo 19", "Job 30, 31"] },
+    { month: 1, day: 17, passages: ["Mateo 17", "Job 25, 26", "Salmos 7"] },
+    { month: 1, day: 18, passages: ["Mateo 18", "Job 27, 28"] },
+    { month: 1, day: 19, passages: ["Mateo 19", "Job 29, 30, 31"] },
     { month: 1, day: 20, passages: ["Mateo 20", "Job 32, 33", "Salmos 8"] },
     { month: 1, day: 21, passages: ["Mateo 21", "Job 34, 35", "Salmos 9"] },
     { month: 1, day: 22, passages: ["Mateo 22", "Job 36, 37", "Proverbios 4"] },
     { month: 1, day: 23, passages: ["Mateo 23", "Job 38, 39"] },
-    { month: 1, day: 24, passages: ["Mateo 24", "Job 40, 41, 42", "Salmos 10"] },
-    { month: 1, day: 25, passages: ["Mateo 25", "Génesis 12, 13", "Salmos 11"] },
-    { month: 1, day: 26, passages: ["Mateo 26", "Génesis 14, 15", "Proverbios 5"] },
-    { month: 1, day: 27, passages: ["Mateo 27", "Génesis 16, 17"] },
+    { month: 1, day: 24, passages: ["Mateo 24", "Job 40, 41", "Salmos 10"] },
+    { month: 1, day: 25, passages: ["Mateo 25", "Job 42", "Salmos 11"] },
+    { month: 1, day: 26, passages: ["Mateo 26", "Génesis 12", "Proverbios 5"] },
+    { month: 1, day: 27, passages: ["Mateo 27", "Génesis 13, 14"] },
     { month: 1, day: 28, passages: ["Mateo 28", "Génesis 15, 16", "Proverbios 6"] },
-    { month: 1, day: 29, passages: ["Hechos 1", "Génesis 20, 21, 22"] },
-    { month: 1, day: 30, passages: ["Hechos 2", "Génesis 23", "Salmos 12"] },
-    { month: 1, day: 31, passages: ["Hechos 3", "Génesis 24", "Salmos 13"] }
+    { month: 1, day: 29, passages: ["Hechos 1", "Génesis 17, 18"] },
+    { month: 1, day: 30, passages: ["Hechos 2", "Génesis 19, 20", "Salmos 12"] },
+    { month: 1, day: 31, passages: ["Hechos 3", "Génesis 21, 22", "Salmos 13"] }
 ];
 
 const februaryPlan: Reading[] = [
