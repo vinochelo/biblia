@@ -203,6 +203,40 @@ const junePlan: Reading[] = [
     { month: 6, day: 30, passages: ["Colosenses 3", "Cantares 1, 2, 3"] },
 ];
 
+const julyPlan: Reading[] = [
+    { month: 7, day: 1, passages: ["Colosenses 4", "Cantares 4, 5, 6"] },
+    { month: 7, day: 2, passages: ["Marcos 1", "Cantares 7, 8", "Salmos 72"] },
+    { month: 7, day: 3, passages: ["Marcos 2", "1Reyes 5, 6"] },
+    { month: 7, day: 4, passages: ["Marcos 3", "1Reyes 7, 8", "Proverbios 1"] },
+    { month: 7, day: 5, passages: ["Marcos 4", "1Reyes 9, 10", "Salmos 73"] },
+    { month: 7, day: 6, passages: ["Marcos 5", "2Crónicas 1, 2, 3"] },
+    { month: 7, day: 7, passages: ["Marcos 6", "2Crónicas 4, 5", "Salmos 74"] },
+    { month: 7, day: 8, passages: ["Marcos 7", "2Crónicas 6, 7", "Proverbios 2"] },
+    { month: 7, day: 9, passages: ["Marcos 8", "Eclesiastés 1, 2"] },
+    { month: 7, day: 10, passages: ["Marcos 9", "Eclesiastés 3, 4, 5"] },
+    { month: 7, day: 11, passages: ["Marcos 10", "Eclesiastés 6, 7", "Salmos 75"] },
+    { month: 7, day: 12, passages: ["Marcos 11", "Eclesiastés 8, 9", "Salmos 76"] },
+    { month: 7, day: 13, passages: ["Marcos 12", "Eclesiastés 10, 11, 12"] },
+    { month: 7, day: 14, passages: ["Marcos 13", "2Crónicas 8, 9", "Proverbios 3"] },
+    { month: 7, day: 15, passages: ["Marcos 14", "1Reyes 11, 12"] },
+    { month: 7, day: 16, passages: ["Marcos 15", "1Reyes 13, 14", "Salmos 77"] },
+    { month: 7, day: 17, passages: ["Marcos 16", "2Crónicas 10, 11"] },
+    { month: 7, day: 18, passages: ["1Tesalonicenses 1", "2Crónicas 12, 13", "Proverbios 4"] },
+    { month: 7, day: 19, passages: ["1Tesalonicenses 2", "2Crónicas 14, 15"] },
+    { month: 7, day: 20, passages: ["1Tesalonicenses 3", "2Crónicas 16, 17", "Salmos 78"] },
+    { month: 7, day: 21, passages: ["1Tesalonicenses 4", "2Crónicas 18, 19"] },
+    { month: 7, day: 22, passages: ["1Tesalonicenses 5", "1Reyes 15, 16", "Salmos 79"] },
+    { month: 7, day: 23, passages: ["2Tesalonicenses 1", "1Reyes 17, 18"] },
+    { month: 7, day: 24, passages: ["2Tesalonicenses 2", "1Reyes 19, 20", "Salmos 80"] },
+    { month: 7, day: 25, passages: ["2Tesalonicenses 3", "1Reyes 21, 22"] },
+    { month: 7, day: 26, passages: ["1Timoteo 1", "2Crónicas 20, 21", "Proverbios 5"] },
+    { month: 7, day: 27, passages: ["1Timoteo 2", "2Reyes 1, 2"] },
+    { month: 7, day: 28, passages: ["1Timoteo 3", "2Reyes 3, 4", "Salmos 81"] },
+    { month: 7, day: 29, passages: ["1Timoteo 4", "2Reyes 5, 6", "Salmos 82"] },
+    { month: 7, day: 30, passages: ["1Timoteo 5", "2Reyes 7, 8"] },
+    { month: 7, day: 31, passages: ["1Timoteo 6", "Abdías 1", "Salmos 83"] }
+];
+
 export const studyPlan: Reading[] = [
     ...januaryPlan,
     ...februaryPlan,
@@ -210,4 +244,5 @@ export const studyPlan: Reading[] = [
     ...aprilPlan,
     ...mayPlan,
     ...junePlan,
+    ...julyPlan,
 ];
