@@ -19,13 +19,15 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
+
 export function BibleReader() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const chapterFromUrl = searchParams.get('chapter');
 
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
+  const [version, setVersion] = useState<string>(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
@@ -42,7 +44,23 @@ export function BibleReader() {
   useEffect(() => {
     const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
     setApiKey(key);
+
+    const savedVersion = localStorage.getItem(BIBLE_VERSION_STORAGE_KEY);
+    if (savedVersion && bibleVersions.some(v => v.id === savedVersion)) {
+        setVersion(savedVersion);
+    }
   }, []);
+
+  const handleVersionChange = (newVersion: string) => {
+    setVersion(newVersion);
+    localStorage.setItem(BIBLE_VERSION_STORAGE_KEY, newVersion);
+    // Reset selections when version changes
+    setSelectedBook(null);
+    setChapters([]);
+    setSelectedChapter(null);
+    setChapterContent(null);
+    router.replace(`/read`, { scroll: false });
+  };
 
   const fetchChapterContent = useCallback(async (versionId: string, chapterId: string, key: string) => {
     setIsLoading(p => ({ ...p, content: true }));
@@ -64,30 +82,24 @@ export function BibleReader() {
   const fetchChapters = useCallback(async (versionId: string, bookId: string, key: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
     setError(null);
+    setChapters([]);
     
     const response = await getChapters(versionId, bookId, key);
     if ("error" in response) {
       setError(response.error);
-      setChapters([]);
     } else {
       setChapters(response);
-      const currentChapterStillExists = response.some(c => c.id === selectedChapter);
-      if (selectedChapter && currentChapterStillExists) {
-        fetchChapterContent(versionId, selectedChapter, key);
+      const chapterFromUrlExists = response.some(c => c.id === chapterFromUrl);
+      if (chapterFromUrl && chapterFromUrl.startsWith(bookId) && chapterFromUrlExists) {
+           setSelectedChapter(chapterFromUrl);
+           // Content will be fetched in the main useEffect
       } else {
-        // If coming from URL, select the chapter if it exists in the new book
-        const chapterFromUrlExists = response.some(c => c.id === chapterFromUrl);
-        if (chapterFromUrl && chapterFromUrl.startsWith(bookId) && chapterFromUrlExists) {
-             setSelectedChapter(chapterFromUrl);
-             fetchChapterContent(versionId, chapterFromUrl, key);
-        } else {
-            setSelectedChapter(null);
-            setChapterContent(null);
-        }
+          setSelectedChapter(null);
+          setChapterContent(null);
       }
     }
     setIsLoading(p => ({ ...p, chapters: false }));
-  }, [selectedChapter, fetchChapterContent, chapterFromUrl]);
+  }, [chapterFromUrl]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -95,87 +107,57 @@ export function BibleReader() {
       return;
     }
     setError(null);
-    setIsLoading(p => ({ ...p, books: true, chapters: true, content: false }));
+    setIsLoading(p => ({ ...p, books: true }));
     
-    async function fetchBooks() {
-      const response = await getBooks(version, apiKey!);
-      if ("error" in response) {
-        setError(response.error);
+    async function fetchInitialData() {
+      const booksResponse = await getBooks(version, apiKey!);
+      if ("error" in booksResponse) {
+        setError(booksResponse.error);
         setBooks([]);
-        setChapters([]);
-        setChapterContent(null);
-        setSelectedBook(null);
-        setSelectedChapter(null);
       } else {
-        setBooks(response);
-        
-        let bookToSelect = selectedBook;
-        // Logic to handle incoming chapter from URL
-        if(chapterFromUrl && !selectedBook) {
+        setBooks(booksResponse);
+        if (chapterFromUrl) {
             const bookIdFromUrl = chapterFromUrl.split('.')[0];
-            const bookFromUrl = response.find(b => b.id === bookIdFromUrl);
-            if(bookFromUrl) {
-                bookToSelect = bookIdFromUrl;
+            if (booksResponse.some(b => b.id === bookIdFromUrl)) {
                 setSelectedBook(bookIdFromUrl);
-                setSelectedChapter(chapterFromUrl);
             }
-        }
-        
-        const currentBookStillExists = response.some(b => b.id === bookToSelect);
-        if (bookToSelect && currentBookStillExists) {
-            fetchChapters(version, bookToSelect, apiKey!);
-        } else {
-            setChapters([]);
-            setChapterContent(null);
-            setSelectedBook(null);
-            setSelectedChapter(null);
-            setIsLoading(p => ({...p, chapters: false}));
         }
       }
       setIsLoading(p => ({ ...p, books: false }));
     }
-    fetchBooks();
+    fetchInitialData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, apiKey]);
 
   useEffect(() => {
-    if (chapterFromUrl && books.length > 0 && apiKey) {
-        const bookId = chapterFromUrl.split('.')[0];
-        const chapterId = chapterFromUrl;
-        
-        if (books.some(b => b.id === bookId)) {
-            if(selectedBook !== bookId) {
-                setSelectedBook(bookId);
-            }
-            if(selectedChapter !== chapterId) {
-                setSelectedChapter(chapterId);
-                fetchChapterContent(version, chapterId, apiKey);
-            }
-        }
+    if (selectedBook && apiKey) {
+        fetchChapters(version, selectedBook, apiKey);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterFromUrl, books, apiKey, version]);
+  }, [selectedBook, version, apiKey]);
 
-  const handleBookChange = async (bookId: string) => {
+  useEffect(() => {
+    if (selectedChapter && apiKey) {
+        fetchChapterContent(version, selectedChapter, apiKey);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChapter, version, apiKey]);
+
+  const handleBookChange = (bookId: string) => {
     setSelectedBook(bookId);
-    setChapters([]);
     setSelectedChapter(null);
     setChapterContent(null);
-    router.replace(`/read`, { scroll: false });
-    if (!apiKey) return;
-    fetchChapters(version, bookId, apiKey);
+    router.replace(`/read?book=${bookId}`, { scroll: false });
   };
 
-  const handleChapterChange = async (chapterId: string) => {
+  const handleChapterChange = (chapterId: string) => {
     setSelectedChapter(chapterId);
-    if (!apiKey) return;
-    fetchChapterContent(version, chapterId, apiKey);
   };
 
   return (
     <div className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select value={version} onValueChange={setVersion}>
+            <Select value={version} onValueChange={handleVersionChange}>
                 <SelectTrigger className="w-full">
                     <SelectValue placeholder="Seleccionar versión" />
                 </SelectTrigger>
@@ -276,3 +258,5 @@ export function BibleReader() {
     </div>
   );
 }
+
+    
