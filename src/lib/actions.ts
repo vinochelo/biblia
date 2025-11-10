@@ -39,11 +39,15 @@ export async function searchVerses(
 
     const data = await response.json();
 
-    if (!data.data || data.data.total === 0) {
+    if (!data.data) {
+      // This handles cases where the API returns a 200 OK but the data object is missing.
       return { verses: [], total: 0, bibleId: versionId };
     }
+    
+    // The API might return an empty 'verses' array or null.
+    const versesData = data.data.verses || [];
 
-    const verses = data.data.verses.map((verse: any) => ({
+    const verses = versesData.map((verse: any) => ({
       id: verse.id,
       reference: verse.reference,
       text: verse.text, 
@@ -51,12 +55,13 @@ export async function searchVerses(
 
     return {
       verses,
-      total: data.data.total,
+      total: data.data.total || 0,
       bibleId: versionId,
     };
 
   } catch (error: any) {
     console.error("Error de red o de análisis:", error);
-    return { error: `Ha ocurrido un error de red: ${error.message}` };
+    // This catches network errors (e.g., DNS, connection refused) or JSON parsing errors.
+    return { error: `Ha ocurrido un error de red o de comunicación: ${error.message}` };
   }
 }
