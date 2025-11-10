@@ -18,8 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
 export function BibleReader() {
-  const [apiKey, setApiKey] = useState<string | null>("hHfw2xKKsVSS1wuy9nGe7");
-  const [version, setVersion] = useState(bibleVersions[0].id);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'KJV')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
@@ -34,10 +34,8 @@ export function BibleReader() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const key = localStorage.getItem("bible-api-key");
-    if (key) {
-      setApiKey(key);
-    }
+    const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
+    setApiKey(key);
   }, []);
 
   useEffect(() => {

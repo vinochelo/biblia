@@ -19,18 +19,16 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 
 export function VerseSearch() {
-  const [version, setVersion] = useState(bibleVersions[0].id);
+  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'KJV')?.id || bibleVersions[0].id);
   const [results, setResults] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>("hHfw2xKKsVSS1wuy9nGe7");
+  const [apiKey, setApiKey] = useState<string | null>(null);
 
   useEffect(() => {
-    const key = localStorage.getItem("bible-api-key");
-    if (key) {
-      setApiKey(key);
-    }
+    const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
+    setApiKey(key);
   }, []);
 
   const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
