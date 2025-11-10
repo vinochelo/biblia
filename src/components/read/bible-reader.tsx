@@ -4,9 +4,11 @@
 import { getBooks, getChapters, getChapter } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { Book, ChapterSummary, Chapter } from "@/lib/types";
-import { Loader2, Terminal } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { Loader2, Terminal, BookOpen, Search } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
+import { defineTerm } from "@/ai/flows/dictionary-flow";
+
 import {
   Select,
   SelectContent,
@@ -18,6 +20,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from "@/components/ui/dialog";
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 
@@ -38,8 +48,17 @@ export function BibleReader() {
     books: false,
     chapters: false,
     content: false,
+    dictionary: false,
   });
   const [error, setError] = useState<string | null>(null);
+
+  // Dictionary state
+  const [selection, setSelection] = useState<string>("");
+  const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
+  const [isDictionaryOpen, setIsDictionaryOpen] = useState(false);
+  const [dictionaryResult, setDictionaryResult] = useState<{term: string, definition: string, reference?: string} | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
@@ -67,7 +86,6 @@ export function BibleReader() {
     setError(null);
     setChapterContent(null);
     
-    // Update URL without reloading page
     router.replace(`/read?chapter=${chapterId}`, { scroll: false });
 
     const response = await getChapter(versionId, chapterId, key);
@@ -92,7 +110,6 @@ export function BibleReader() {
       const chapterFromUrlExists = response.some(c => c.id === chapterFromUrl);
       if (chapterFromUrl && chapterFromUrl.startsWith(bookId) && chapterFromUrlExists) {
            setSelectedChapter(chapterFromUrl);
-           // Content will be fetched in the main useEffect
       } else {
           setSelectedChapter(null);
           setChapterContent(null);
@@ -126,22 +143,19 @@ export function BibleReader() {
       setIsLoading(p => ({ ...p, books: false }));
     }
     fetchInitialData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, apiKey]);
+  }, [version, apiKey, chapterFromUrl]);
 
   useEffect(() => {
     if (selectedBook && apiKey) {
         fetchChapters(version, selectedBook, apiKey);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBook, version, apiKey]);
+  }, [selectedBook, version, apiKey, fetchChapters]);
 
   useEffect(() => {
     if (selectedChapter && apiKey) {
         fetchChapterContent(version, selectedChapter, apiKey);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChapter, version, apiKey]);
+  }, [selectedChapter, version, apiKey, fetchChapterContent]);
 
   const handleBookChange = (bookId: string) => {
     setSelectedBook(bookId);
@@ -153,6 +167,48 @@ export function BibleReader() {
   const handleChapterChange = (chapterId: string) => {
     setSelectedChapter(chapterId);
   };
+  
+  const handleSelection = () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (text.length > 2 && text.length < 50 && contentRef.current?.contains(selection?.anchorNode)) {
+      setSelection(text);
+      const range = selection?.getRangeAt(0);
+      if (range) {
+        setSelectionRect(range.getBoundingClientRect());
+      }
+    } else {
+      setSelection("");
+      setSelectionRect(null);
+    }
+  };
+
+  const handleDefine = async () => {
+    if (!selection) return;
+    setIsLoading(p => ({ ...p, dictionary: true }));
+    setDictionaryResult(null);
+    setIsDictionaryOpen(true);
+    setSelectionRect(null);
+
+    try {
+        const sel = window.getSelection();
+        const range = sel?.getRangeAt(0);
+        let context = '';
+        if (range) {
+            const parentElement = range.startContainer.parentElement;
+            context = parentElement?.textContent || '';
+        }
+
+        const result = await defineTerm({ term: selection, context });
+        setDictionaryResult(result);
+    } catch (e) {
+        console.error(e);
+        setDictionaryResult({term: selection, definition: "No se pudo obtener la definición. Inténtalo de nuevo."});
+    } finally {
+        setIsLoading(p => ({ ...p, dictionary: false }));
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -224,7 +280,7 @@ export function BibleReader() {
             )}
             
             {!isLoading.content && chapterContent && (
-                <Card>
+                <Card onMouseUp={handleSelection} ref={contentRef}>
                     <CardHeader>
                         <CardTitle className="font-headline text-2xl">{chapterContent.reference}</CardTitle>
                     </CardHeader>
@@ -236,6 +292,46 @@ export function BibleReader() {
                     </CardContent>
                 </Card>
             )}
+            
+            {selectionRect && (
+                <div 
+                    style={{
+                        position: 'fixed',
+                        top: `${selectionRect.top - 40}px`,
+                        left: `${selectionRect.left + selectionRect.width / 2 - 20}px`,
+                    }}
+                >
+                    <Button onClick={handleDefine} size="icon" className="rounded-full shadow-lg">
+                        <BookOpen className="h-5 w-5" />
+                    </Button>
+                </div>
+            )}
+            
+            <Dialog open={isDictionaryOpen} onOpenChange={setIsDictionaryOpen}>
+                <DialogContent className="sm:max-w-md">
+                     <DialogHeader>
+                        <DialogTitle className="font-headline text-2xl">Diccionario Bíblico</DialogTitle>
+                        <DialogDescription>
+                            Definición de <span className="font-bold">{dictionaryResult?.term}</span>
+                        </DialogDescription>
+                    </DialogHeader>
+                    {isLoading.dictionary ? (
+                         <div className="flex justify-center items-center h-32">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                         </div>
+                    ) : (
+                        <div className="space-y-4 pt-4 text-base">
+                            <p>{dictionaryResult?.definition}</p>
+                            {dictionaryResult?.reference && (
+                                 <blockquote className="mt-6 border-l-2 pl-6 italic">
+                                    {dictionaryResult.reference}
+                                 </blockquote>
+                            )}
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
 
             {!isLoading.content && !chapterContent && !error && selectedBook && selectedChapter && (
                  <div className="text-center py-10 border-2 border-dashed rounded-lg mt-4">
@@ -258,5 +354,7 @@ export function BibleReader() {
     </div>
   );
 }
+
+    
 
     
