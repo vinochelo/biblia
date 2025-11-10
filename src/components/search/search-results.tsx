@@ -26,9 +26,10 @@ export function SearchResults({ results }: SearchResultsProps) {
               <CardTitle className="font-headline text-xl">{verse.reference}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="leading-relaxed text-lg font-body">
-                {verse.text}
-              </p>
+              <div 
+                className="leading-relaxed text-lg font-body"
+                dangerouslySetInnerHTML={{ __html: verse.text }}
+              />
             </CardContent>
           </Card>
         ))}

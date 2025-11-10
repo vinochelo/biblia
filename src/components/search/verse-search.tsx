@@ -4,7 +4,7 @@ import { searchVerses } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { SearchResult } from "@/lib/types";
 import { Search, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -24,11 +24,24 @@ export function VerseSearch() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Client-side only: retrieve API key from localStorage
+    setApiKey(localStorage.getItem("bible-api-key"));
+  }, []);
 
   const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const query = formData.get("query") as string;
+
+    if (!apiKey) {
+      setError("Por favor, configura tu clave API en la página de configuración.");
+      setResults(null);
+      setHasSearched(true);
+      return;
+    }
 
     if (!query) {
       setError("Por favor, introduce un término de búsqueda.");
@@ -42,7 +55,7 @@ export function VerseSearch() {
     setHasSearched(true);
     setResults(null);
 
-    const response = await searchVerses(query, version);
+    const response = await searchVerses(query, version, apiKey);
     if ("error" in response) {
       setError(response.error);
     } else {

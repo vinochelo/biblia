@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +20,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { KeyRound, Save } from "lucide-react";
+
+const API_KEY_STORAGE_KEY = "bible-api-key";
 
 const settingsFormSchema = z.object({
   apiKey: z.string().min(10, {
@@ -43,8 +46,17 @@ export function SettingsForm() {
     }
   });
 
+  useEffect(() => {
+    // Client-side only: load saved settings from localStorage
+    const savedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (savedApiKey) {
+      form.setValue("apiKey", savedApiKey);
+    }
+  }, [form]);
+
   function onSubmit(data: SettingsFormValues) {
     // In a real app, you would save this to localStorage or a secure store.
+    localStorage.setItem(API_KEY_STORAGE_KEY, data.apiKey);
     console.log(data);
     toast({
       title: "Configuración guardada",
