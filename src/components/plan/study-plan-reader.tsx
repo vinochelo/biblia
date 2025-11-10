@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { studyPlan } from "@/lib/study-plan";
 import type { Reading } from "@/lib/study-plan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -23,24 +24,13 @@ const bookToId: { [key: string]: string } = {
     "1Timoteo": "1TI", "2Timoteo": "2TI", "Tito": "TIT", "Filemón": "PHM", "Hebreos": "HEB",
     "Santiago": "JAS", "1Pedro": "1PE", "2Pedro": "2PE", "1Juan": "1JN", "2Juan": "2JN",
     "3Juan": "3JN", "Judas": "JUD", "Apocalipsis": "REV"
-  };
+};
 
-  function getFormattedDate(date: Date): string {
-    return new Intl.DateTimeFormat('es-ES', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }).format(date);
-  }
-  
-  function getFirstChapterFromPassage(passage: string): string {
+function getFirstChapterFromPassage(passage: string): string {
     const bookMatch = passage.match(/^(\d? ?[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]+)/);
     if (!bookMatch) return '';
     
-    let bookName = bookMatch[1].trim();
-    // Special handling for numbered books like "1 Corintios"
-    bookName = bookName.replace(/\s/g, '');
+    let bookName = bookMatch[1].trim().replace(/\s/g, '');
     
     const bookId = bookToId[bookName];
     if (!bookId) return '';
@@ -51,71 +41,129 @@ const bookToId: { [key: string]: string } = {
     const chapterNumber = chapterMatch[1];
 
     return `${bookId}.${chapterNumber}`;
-  }
+}
 
+const useStudyProgress = () => {
+    const [completed, setCompleted] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        const savedProgress = localStorage.getItem("study-progress");
+        if (savedProgress) {
+            setCompleted(new Set(JSON.parse(savedProgress)));
+        }
+    }, []);
+
+    const toggleComplete = (month: number, day: number) => {
+        const key = `${month}-${day}`;
+        setCompleted(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(key)) {
+                newSet.delete(key);
+            } else {
+                newSet.add(key);
+            }
+            localStorage.setItem("study-progress", JSON.stringify(Array.from(newSet)));
+            return newSet;
+        });
+    };
+
+    const isCompleted = (month: number, day: number) => {
+        return completed.has(`${month}-${day}`);
+    };
+
+    return { completed, toggleComplete, isCompleted };
+};
 
 export function StudyPlanReader() {
-  const [todayReading, setTodayReading] = useState<Reading | null>(null);
-  const [currentDate, setCurrentDate] = useState<Date | null>(null);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const { completed, toggleComplete, isCompleted } = useStudyProgress();
 
-  useEffect(() => {
-    const now = new Date();
-    setCurrentDate(now);
-    const todayMonth = now.getMonth() + 1; // getMonth() es 0-indexed
-    const todayDay = now.getDate();
+  const changeMonth = (offset: number) => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(1); // Avoid issues with month-end dates
+      newDate.setMonth(prev.getMonth() + offset);
+      return newDate;
+    });
+  };
 
-    const reading = studyPlan.find(
-      (r) => r.month === todayMonth && r.day === todayDay
-    );
-    setTodayReading(reading || null);
-  }, []);
+  const getReadingsForMonth = (month: number, year: number) => {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const readings = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+        const reading = studyPlan.find(r => r.month === month && r.day === day);
+        readings.push({ day, reading: reading || null });
+    }
+    return readings;
+  };
 
-  if (!currentDate) {
-    return null; // O un spinner/loading
-  }
+  const currentMonth = currentDate.getMonth() + 1;
+  const currentYear = currentDate.getFullYear();
+  const monthReadings = getReadingsForMonth(currentMonth, currentYear);
+  const monthName = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(currentDate);
+
+  const totalReadings = studyPlan.length;
+  const completedReadings = completed.size;
+  const progressPercentage = (completedReadings / totalReadings) * 100;
 
   return (
     <div className="space-y-6">
-       <Card className="text-center bg-primary text-primary-foreground">
+      <Card>
         <CardHeader>
-          <CardTitle className="text-2xl font-bold font-headline">
-            Lectura para hoy: {getFormattedDate(currentDate)}
-          </CardTitle>
+          <CardTitle className="font-headline text-xl">Progreso Anual</CardTitle>
         </CardHeader>
+        <CardContent className="space-y-2">
+            <Progress value={progressPercentage} aria-label={`${Math.round(progressPercentage)}% completado`} />
+            <p className="text-sm text-center text-muted-foreground">{completedReadings} de {totalReadings} lecturas completadas.</p>
+        </CardContent>
       </Card>
       
-      {todayReading ? (
-        <div className="grid gap-6 md:grid-cols-3">
-          {todayReading.passages.map((passage, index) => {
-            const chapterId = getFirstChapterFromPassage(passage);
-            const link = chapterId ? `/read?chapter=${chapterId}` : '/read';
+      <div className="flex items-center justify-between">
+          <Button variant="outline" size="icon" onClick={() => changeMonth(-1)}>
+              <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h2 className="text-2xl font-bold font-headline capitalize">{monthName}</h2>
+          <Button variant="outline" size="icon" onClick={() => changeMonth(1)}>
+              <ArrowRight className="h-4 w-4" />
+          </Button>
+      </div>
 
-            return (
-                <Link href={link} key={index} className="block group">
-                    <Card className="h-full transition-all duration-200 ease-in-out group-hover:shadow-lg group-hover:border-primary">
-                        <CardHeader>
-                        <CardTitle className="font-headline text-2xl">{passage}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                        <div className="flex items-center justify-end text-sm text-primary group-hover:font-bold">
-                            Leer ahora <ArrowRight className="ml-2 h-4 w-4" />
+      <div className="grid grid-cols-1 gap-4">
+        {monthReadings.map(({day, reading}) => (
+            <div key={day} className={`flex items-start gap-4 p-4 rounded-lg border ${isCompleted(currentMonth, day) ? 'bg-muted/50 text-muted-foreground' : 'bg-card'}`}>
+                <div className="flex flex-col items-center">
+                    <button onClick={() => reading && toggleComplete(currentMonth, day)} disabled={!reading} className="disabled:opacity-50 disabled:cursor-not-allowed">
+                        {isCompleted(currentMonth, day) ? (
+                            <CheckCircle2 className="h-6 w-6 text-green-500" />
+                        ) : (
+                            <Circle className="h-6 w-6 text-muted-foreground/50" />
+                        )}
+                    </button>
+                    <span className="text-2xl font-bold">{day}</span>
+                </div>
+                <div className="flex-1">
+                    {reading ? (
+                        <div className={`grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3`}>
+                             {reading.passages.map((passage, index) => {
+                                const chapterId = getFirstChapterFromPassage(passage);
+                                const link = chapterId ? `/read?chapter=${chapterId}` : '/read';
+                                return (
+                                    <Link href={link} key={index} className={`block group p-3 rounded-md transition-colors ${isCompleted(currentMonth, day) ? 'hover:bg-muted' : 'hover:bg-secondary'}`}>
+                                        <div className="font-semibold font-headline text-lg">{passage}</div>
+                                        <div className={`flex items-center text-sm ${isCompleted(currentMonth, day) ? 'text-muted-foreground' : 'text-primary group-hover:font-bold'}`}>
+                                            Leer ahora <ArrowRight className="ml-2 h-4 w-4" />
+                                        </div>
+                                    </Link>
+                                );
+                            })}
                         </div>
-                        </CardContent>
-                    </Card>
-                </Link>
-            );
-          })}
-        </div>
-      ) : (
-        <Card>
-            <CardHeader>
-                <CardTitle>No hay lectura para hoy</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p>No se encontró un plan de lectura para el día de hoy.</p>
-            </CardContent>
-        </Card>
-      )}
+                    ) : (
+                        <p className="text-muted-foreground italic mt-1">Día de descanso o lectura libre.</p>
+                    )}
+                </div>
+            </div>
+        ))}
+      </div>
     </div>
   );
 }
