@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 export function BibleReader() {
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function BibleReader() {
       return;
     }
     setError(null);
-    setIsLoading(p => ({ ...p, books: true }));
+    setIsLoading(p => ({ ...p, books: true, chapters: true, content: false }));
     
     async function fetchBooks() {
       const response = await getBooks(version, apiKey!);
@@ -100,6 +101,7 @@ export function BibleReader() {
             setChapterContent(null);
             setSelectedBook(null);
             setSelectedChapter(null);
+            setIsLoading(p => ({...p, chapters: false}));
         }
       }
       setIsLoading(p => ({ ...p, books: false }));
@@ -125,7 +127,7 @@ export function BibleReader() {
 
   return (
     <div className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select value={version} onValueChange={setVersion}>
                 <SelectTrigger className="w-full">
                     <SelectValue placeholder="Seleccionar versión" />
@@ -151,20 +153,29 @@ export function BibleReader() {
                     ))}
                 </SelectContent>
             </Select>
-
-            <Select value={selectedChapter ?? ""} onValueChange={handleChapterChange} disabled={!selectedBook || isLoading.chapters}>
-                <SelectTrigger className="w-full">
-                    <SelectValue placeholder={isLoading.chapters ? "Cargando..." : "Seleccionar capítulo"} />
-                </SelectTrigger>
-                <SelectContent>
-                    {chapters.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                        Capítulo {c.number}
-                    </SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
         </div>
+
+        {selectedBook && (isLoading.chapters ? (
+             <div className="flex justify-center items-center h-full pt-10">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+             </div>
+        ) : chapters.length > 0 ? (
+            <div className="space-y-4 pt-4">
+                <h3 className="text-xl font-headline font-bold text-center">Selecciona un Capítulo</h3>
+                <div className="flex flex-wrap justify-center gap-2">
+                    {chapters.map((c) => (
+                        <Button
+                            key={c.id}
+                            variant={selectedChapter === c.id ? "default" : "outline"}
+                            onClick={() => handleChapterChange(c.id)}
+                            className="w-12 h-12 text-lg"
+                        >
+                            {c.number}
+                        </Button>
+                    ))}
+                </div>
+            </div>
+        ) : null)}
 
         <Separator />
 
@@ -177,7 +188,7 @@ export function BibleReader() {
                 </Alert>
             )}
 
-            {(isLoading.books || isLoading.chapters || isLoading.content) && (
+            {isLoading.content && (
                 <div className="flex justify-center items-center h-full pt-10">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
@@ -197,9 +208,21 @@ export function BibleReader() {
                 </Card>
             )}
 
-            {!isLoading.content && !chapterContent && !error && (
+            {!isLoading.content && !chapterContent && !error && selectedBook && selectedChapter && (
                  <div className="text-center py-10 border-2 border-dashed rounded-lg mt-4">
                     <p className="text-muted-foreground">El contenido del capítulo aparecerá aquí.</p>
+                </div>
+            )}
+
+            {!selectedBook && !error && !isLoading.books &&(
+                 <div className="text-center py-10 border-2 border-dashed rounded-lg mt-4">
+                    <p className="text-muted-foreground">Selecciona un libro para ver los capítulos.</p>
+                </div>
+            )}
+
+            {selectedBook && !selectedChapter && !isLoading.chapters && !isLoading.content && !error &&(
+                 <div className="text-center py-10 border-2 border-dashed rounded-lg mt-4">
+                    <p className="text-muted-foreground">Selecciona un capítulo para comenzar a leer.</p>
                 </div>
             )}
         </div>
