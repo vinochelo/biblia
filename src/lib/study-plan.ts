@@ -237,6 +237,41 @@ const julyPlan: Reading[] = [
     { month: 7, day: 31, passages: ["1Timoteo 6", "Abdías 1", "Salmos 83"] }
 ];
 
+const augustPlan: Reading[] = [
+    { month: 8, day: 1, passages: ["2Timoteo 1", "2Crónicas 22", "Proverbios 6"] },
+    { month: 8, day: 2, passages: ["2Timoteo 2", "Joel 1, 2, 3"] },
+    { month: 8, day: 3, passages: ["2Timoteo 3", "2Reyes 9, 10", "Salmos 84"] },
+    { month: 8, day: 4, passages: ["2Timoteo 4", "2Reyes 11, 12"] },
+    { month: 8, day: 5, passages: ["Tito 1", "2Reyes 13, 14", "Salmos 85"] },
+    { month: 8, day: 6, passages: ["Tito 2", "Jonás 1, 2, 3, 4"] },
+    { month: 8, day: 7, passages: ["Tito 3", "Amós 1, 2", "Salmos 86"] },
+    { month: 8, day: 8, passages: ["Filemón 1", "Amós 3, 4, 5"] },
+    { month: 8, day: 9, passages: ["Mateo 1", "Amós 6, 7", "Proverbios 7"] },
+    { month: 8, day: 10, passages: ["Mateo 2", "Amós 8, 9"] },
+    { month: 8, day: 11, passages: ["Mateo 3", "2Crónicas 23, 24", "Salmos 87"] },
+    { month: 8, day: 12, passages: ["Mateo 4", "2Crónicas 25, 26"] },
+    { month: 8, day: 13, passages: ["Mateo 5", "Isaías 1, 2", "Salmos 88"] },
+    { month: 8, day: 14, passages: ["Mateo 6", "Isaías 3, 4"] },
+    { month: 8, day: 15, passages: ["Mateo 7", "Isaías 5, 6", "Salmos 89"] },
+    { month: 8, day: 16, passages: ["Mateo 8", "2Crónicas 27, 28"] },
+    { month: 8, day: 17, passages: ["Mateo 9", "2Reyes 15, 16", "Proverbios 8"] },
+    { month: 8, day: 18, passages: ["Mateo 10", "Isaías 7, 8"] },
+    { month: 8, day: 19, passages: ["Mateo 11", "Isaías 9, 10", "Salmos 90"] },
+    { month: 8, day: 20, passages: ["Mateo 12", "Isaías 11, 12", "Salmos 91"] },
+    { month: 8, day: 21, passages: ["Mateo 13", "Isaías 13, 14", "Salmos 92"] },
+    { month: 8, day: 22, passages: ["Mateo 14", "Isaías 15, 16"] },
+    { month: 8, day: 23, passages: ["Mateo 15", "Isaías 17, 18", "Proverbios 9"] },
+    { month: 8, day: 24, passages: ["Mateo 16", "Isaías 19, 20"] },
+    { month: 8, day: 25, passages: ["Mateo 17", "Isaías 21, 22", "Salmos 93"] },
+    { month: 8, day: 26, passages: ["Mateo 18", "Isaías 23, 24", "Salmos 94"] },
+    { month: 8, day: 27, passages: ["Mateo 19", "Isaías 25, 26", "Salmos 95"] },
+    { month: 8, day: 28, passages: ["Mateo 20", "Isaías 27, 28"] },
+    { month: 8, day: 29, passages: ["Mateo 21", "Isaías 29, 30", "Proverbios 10"] },
+    { month: 8, day: 30, passages: ["Mateo 22", "Isaías 31, 32"] },
+    { month: 8, day: 31, passages: ["Mateo 23", "Isaías 33, 34", "Salmos 96"] }
+];
+
+
 export const studyPlan: Reading[] = [
     ...januaryPlan,
     ...februaryPlan,
@@ -245,4 +280,5 @@ export const studyPlan: Reading[] = [
     ...mayPlan,
     ...junePlan,
     ...julyPlan,
+    ...augustPlan,
 ];
