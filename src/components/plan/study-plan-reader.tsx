@@ -11,36 +11,36 @@ import { Progress } from "@/components/ui/progress";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
-    "Josué": "JOS", "Jueces": "JDG", "Rut": "RUT", "1Samuel": "1SA", "2Samuel": "2SA",
-    "1Reyes": "1KI", "2Reyes": "2KI", "1Crónicas": "1CH", "2Crónicas": "2CH", "Esdras": "EZR",
+    "Josué": "JOS", "Jueces": "JDG", "Rut": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
+    "1 Reyes": "1KI", "2 Reyes": "2KI", "1 Crónicas": "1CH", "2 Crónicas": "2CH", "Esdras": "EZR",
     "Nehemías": "NEH", "Ester": "EST", "Job": "JOB", "Salmos": "PSA", "Proverbios": "PRO",
     "Eclesiastés": "ECC", "Cantares": "SNG", "Isaías": "ISA", "Jeremías": "JER",
     "Lamentaciones": "LAM", "Ezequiel": "EZK", "Daniel": "DAN", "Oseas": "HOS", "Joel": "JOL",
     "Amós": "AMO", "Abdías": "OBA", "Jonás": "JON", "Miqueas": "MIC", "Nahum": "NAM",
     "Habacuc": "HAB", "Sofonías": "ZEP", "Hageo": "HAG", "Zacarías": "ZEC", "Malaquías": "MAL",
     "Mateo": "MAT", "Marcos": "MRK", "Lucas": "LUK", "Juan": "JHN", "Hechos": "ACT",
-    "Romanos": "ROM", "1Corintios": "1CO", "2Corintios": "2CO", "Gálatas": "GAL", "Efesios": "EPH",
-    "Filipenses": "PHP", "Colosenses": "COL", "1Tesalonicenses": "1TH", "2Tesalonicenses": "2TH",
-    "1Timoteo": "1TI", "2Timoteo": "2TI", "Tito": "TIT", "Filemón": "PHM", "Hebreos": "HEB",
-    "Santiago": "JAS", "1Pedro": "1PE", "2Pedro": "2PE", "1Juan": "1JN", "2Juan": "2JN",
-    "3Juan": "3JN", "Judas": "JUD", "Apocalipsis": "REV"
+    "Romanos": "ROM", "1 Corintios": "1CO", "2 Corintios": "2CO", "Gálatas": "GAL", "Efesios": "EPH",
+    "Filipenses": "PHP", "Colosenses": "COL", "1 Tesalonicenses": "1TH", "2 Tesalonicenses": "2TH",
+    "1 Timoteo": "1TI", "2 Timoteo": "2TI", "Tito": "TIT", "Filemón": "PHM", "Hebreos": "HEB",
+    "Santiago": "JAS", "1 Pedro": "1PE", "2 Pedro": "2PE", "1 Juan": "1JN", "2 Juan": "2JN",
+    "3 Juan": "3JN", "Judas": "JUD", "Apocalipsis": "REV"
 };
 
-function getFirstChapterFromPassage(passage: string): string {
-    const bookMatch = passage.match(/^(\d? ?[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]+)/);
-    if (!bookMatch) return '';
-    
-    let bookName = bookMatch[1].trim().replace(/\s/g, '');
-    
-    const bookId = bookToId[bookName];
-    if (!bookId) return '';
+function getChapterIdFromPassage(passage: string): string {
+    const bookNames = Object.keys(bookToId).sort((a, b) => b.length - a.length);
 
-    const chapterMatch = passage.match(/(\d+)/);
-    if(!chapterMatch) return '';
-    
-    const chapterNumber = chapterMatch[1];
-
-    return `${bookId}.${chapterNumber}`;
+    for (const bookName of bookNames) {
+        if (passage.startsWith(bookName)) {
+            const bookId = bookToId[bookName];
+            const remainingPassage = passage.substring(bookName.length).trim();
+            const chapterMatch = remainingPassage.match(/^(\d+)/);
+            if (chapterMatch) {
+                return `${bookId}.${chapterMatch[1]}`;
+            }
+            return '';
+        }
+    }
+    return '';
 }
 
 const useStudyProgress = () => {
@@ -145,7 +145,7 @@ export function StudyPlanReader() {
                     {reading ? (
                         <div className={`grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3`}>
                              {reading.passages.map((passage, index) => {
-                                const chapterId = getFirstChapterFromPassage(passage);
+                                const chapterId = getChapterIdFromPassage(passage);
                                 const link = chapterId ? `/read?chapter=${chapterId}` : '/read';
                                 return (
                                     <Link href={link} key={index} className={`block group p-3 rounded-md transition-colors ${isCompleted(currentMonth, day) ? 'hover:bg-muted' : 'hover:bg-secondary'}`}>
