@@ -19,7 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function BibleReader() {
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'KJV')?.id || bibleVersions[0].id);
+  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);

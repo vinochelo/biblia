@@ -20,7 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 
 export function VerseSearch() {
-  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'KJV')?.id || bibleVersions[0].id);
+  const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [results, setResults] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
