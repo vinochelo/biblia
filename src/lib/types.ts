@@ -15,3 +15,22 @@ export type SearchResult = {
   total: number;
   bibleId: string;
 };
+
+export type Book = {
+  id: string;
+  name: string;
+  abbreviation: string;
+};
+
+export type ChapterSummary = {
+  id: string;
+  number: string;
+  reference: string;
+};
+
+export type Chapter = {
+  id: string;
+  number: string;
+  reference: string;
+  content: string;
+};

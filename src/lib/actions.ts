@@ -1,6 +1,6 @@
 "use server";
 
-import type { SearchResult } from '@/lib/types';
+import type { SearchResult, Book, ChapterSummary, Chapter } from '@/lib/types';
 
 const API_BASE_URL = 'https://rest.api.bible';
 
@@ -40,11 +40,9 @@ export async function searchVerses(
     const data = await response.json();
 
     if (!data.data) {
-      // This handles cases where the API returns a 200 OK but the data object is missing.
       return { verses: [], total: 0, bibleId: versionId };
     }
     
-    // The API might return an empty 'verses' array or null.
     const versesData = data.data.verses || [];
 
     const verses = versesData.map((verse: any) => ({
@@ -61,7 +59,64 @@ export async function searchVerses(
 
   } catch (error: any) {
     console.error("Error de red o de análisis:", error);
-    // This catches network errors (e.g., DNS, connection refused) or JSON parsing errors.
     return { error: `Ha ocurrido un error de red o de comunicación: ${error.message}` };
   }
+}
+
+async function apiCall<T>(path: string, apiKey: string, params?: Record<string, string>): Promise<T | { error: string }> {
+  if (!apiKey) {
+    return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
+  }
+
+  try {
+    const url = new URL(`${API_BASE_URL}${path}`);
+    if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+            url.searchParams.append(key, value);
+        });
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: { 'api-key': apiKey },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
+      console.error("API Error:", response.status, errorMessage);
+      if (response.status === 401 || (typeof errorMessage === 'string' && errorMessage.includes('API key'))) {
+           return { error: 'Clave API no válida o sin permisos. Verifica tu clave e inténtalo de nuevo.' };
+      }
+      return { error: `Error de la API: ${errorMessage}` };
+    }
+    
+    const data = await response.json();
+    return data.data;
+
+  } catch (error: any) {
+    console.error("Error de red o de análisis:", error);
+    return { error: `Ha ocurrido un error de red o de comunicación: ${error.message}` };
+  }
+}
+
+
+export async function getBooks(versionId: string, apiKey: string): Promise<Book[] | { error: string }> {
+    return apiCall<Book[]>(`/v1/bibles/${versionId}/books`, apiKey);
+}
+
+export async function getChapters(versionId: string, bookId: string, apiKey: string): Promise<ChapterSummary[] | { error: string }> {
+    return apiCall<ChapterSummary[]>(`/v1/bibles/${versionId}/books/${bookId}/chapters`, apiKey);
+}
+
+export async function getChapter(versionId: string, chapterId: string, apiKey: string): Promise<Chapter | { error: string }> {
+    const params = {
+        'content-type': 'html',
+        'include-notes': 'false',
+        'include-titles': 'true',
+        'include-chapter-numbers': 'false',
+        'include-verse-numbers': 'true',
+        'include-verse-spans': 'false'
+    };
+    return apiCall<Chapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`, apiKey, params);
 }
