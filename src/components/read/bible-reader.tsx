@@ -6,6 +6,7 @@ import { bibleVersions } from "@/lib/data";
 import type { Book, ChapterSummary, Chapter } from "@/lib/types";
 import { Loader2, Terminal } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Select,
   SelectContent,
@@ -19,6 +20,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 export function BibleReader() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const chapterFromUrl = searchParams.get('chapter');
+
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
@@ -43,6 +48,9 @@ export function BibleReader() {
     setIsLoading(p => ({ ...p, content: true }));
     setError(null);
     setChapterContent(null);
+    
+    // Update URL without reloading page
+    router.replace(`/read?chapter=${chapterId}`, { scroll: false });
 
     const response = await getChapter(versionId, chapterId, key);
     if ("error" in response) {
@@ -51,7 +59,7 @@ export function BibleReader() {
       setChapterContent(response);
     }
     setIsLoading(p => ({ ...p, content: false }));
-  }, []);
+  }, [router]);
 
   const fetchChapters = useCallback(async (versionId: string, bookId: string, key: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
@@ -67,12 +75,19 @@ export function BibleReader() {
       if (selectedChapter && currentChapterStillExists) {
         fetchChapterContent(versionId, selectedChapter, key);
       } else {
-        setSelectedChapter(null);
-        setChapterContent(null);
+        // If coming from URL, select the chapter if it exists in the new book
+        const chapterFromUrlExists = response.some(c => c.id === chapterFromUrl);
+        if (chapterFromUrl && chapterFromUrl.startsWith(bookId) && chapterFromUrlExists) {
+             setSelectedChapter(chapterFromUrl);
+             fetchChapterContent(versionId, chapterFromUrl, key);
+        } else {
+            setSelectedChapter(null);
+            setChapterContent(null);
+        }
       }
     }
     setIsLoading(p => ({ ...p, chapters: false }));
-  }, [selectedChapter, fetchChapterContent]);
+  }, [selectedChapter, fetchChapterContent, chapterFromUrl]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -93,9 +108,22 @@ export function BibleReader() {
         setSelectedChapter(null);
       } else {
         setBooks(response);
-        const currentBookStillExists = response.some(b => b.id === selectedBook);
-        if (selectedBook && currentBookStillExists) {
-            fetchChapters(version, selectedBook, apiKey!);
+        
+        let bookToSelect = selectedBook;
+        // Logic to handle incoming chapter from URL
+        if(chapterFromUrl && !selectedBook) {
+            const bookIdFromUrl = chapterFromUrl.split('.')[0];
+            const bookFromUrl = response.find(b => b.id === bookIdFromUrl);
+            if(bookFromUrl) {
+                bookToSelect = bookIdFromUrl;
+                setSelectedBook(bookIdFromUrl);
+                setSelectedChapter(chapterFromUrl);
+            }
+        }
+        
+        const currentBookStillExists = response.some(b => b.id === bookToSelect);
+        if (bookToSelect && currentBookStillExists) {
+            fetchChapters(version, bookToSelect, apiKey!);
         } else {
             setChapters([]);
             setChapterContent(null);
@@ -110,11 +138,30 @@ export function BibleReader() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, apiKey]);
 
+  useEffect(() => {
+    if (chapterFromUrl && books.length > 0 && apiKey) {
+        const bookId = chapterFromUrl.split('.')[0];
+        const chapterId = chapterFromUrl;
+        
+        if (books.some(b => b.id === bookId)) {
+            if(selectedBook !== bookId) {
+                setSelectedBook(bookId);
+            }
+            if(selectedChapter !== chapterId) {
+                setSelectedChapter(chapterId);
+                fetchChapterContent(version, chapterId, apiKey);
+            }
+        }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterFromUrl, books, apiKey, version]);
+
   const handleBookChange = async (bookId: string) => {
     setSelectedBook(bookId);
     setChapters([]);
     setSelectedChapter(null);
     setChapterContent(null);
+    router.replace(`/read`, { scroll: false });
     if (!apiKey) return;
     fetchChapters(version, bookId, apiKey);
   };

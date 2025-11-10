@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { BookOpen, Settings, BookText } from 'lucide-react';
+import { BookOpen, Settings, BookText, CalendarCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Header() {
@@ -11,6 +11,11 @@ export function Header() {
           <span className="text-lg font-headline">Explorador de Versículos</span>
         </Link>
         <nav className="ml-auto flex items-center gap-2">
+           <Button variant="ghost" size="icon" asChild>
+            <Link href="/plan" aria-label="Plan de Estudio">
+              <CalendarCheck className="h-5 w-5" />
+            </Link>
+          </Button>
           <Button variant="ghost" size="icon" asChild>
             <Link href="/read" aria-label="Leer la Biblia">
               <BookText className="h-5 w-5" />
