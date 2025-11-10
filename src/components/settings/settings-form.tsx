@@ -47,7 +47,6 @@ export function SettingsForm() {
   });
 
   useEffect(() => {
-    // Client-side only: load saved settings from localStorage
     const savedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
     if (savedApiKey) {
       form.setValue("apiKey", savedApiKey);
@@ -55,13 +54,19 @@ export function SettingsForm() {
   }, [form]);
 
   function onSubmit(data: SettingsFormValues) {
-    // In a real app, you would save this to localStorage or a secure store.
-    localStorage.setItem(API_KEY_STORAGE_KEY, data.apiKey);
-    console.log(data);
-    toast({
-      title: "Configuración guardada",
-      description: "Tus cambios han sido guardados exitosamente.",
-    });
+    if (data.apiKey) {
+      localStorage.setItem(API_KEY_STORAGE_KEY, data.apiKey);
+      toast({
+        title: "Configuración guardada",
+        description: "Tu clave API ha sido guardada de forma segura en tu navegador.",
+      });
+    } else {
+      localStorage.removeItem(API_KEY_STORAGE_KEY);
+      toast({
+        title: "Clave API eliminada",
+        description: "Tu clave API ha sido eliminada de tu navegador.",
+      });
+    }
   }
 
   return (

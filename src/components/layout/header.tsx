@@ -12,7 +12,7 @@ export function Header() {
         </Link>
         <nav className="ml-auto">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/settings" aria-label="Settings">
+            <Link href="/settings" aria-label="Configuración">
               <Settings className="h-5 w-5" />
             </Link>
           </Button>

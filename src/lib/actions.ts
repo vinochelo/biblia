@@ -9,8 +9,6 @@ export async function searchVerses(
   versionId: string,
   apiKey: string | null
 ): Promise<SearchResult | { error: string }> {
-  console.log(`Searching for "${query}" in version ${versionId}`);
-
   if (!apiKey) {
     return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
   }
@@ -28,10 +26,10 @@ export async function searchVerses(
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        console.error("API Error:", errorData);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("API Error:", response.status, errorData);
         if (response.status === 401) {
-             return { error: 'Clave API no válida o sin permisos.' };
+             return { error: 'Clave API no válida o sin permisos. Verifica tu clave e inténtalo de nuevo.' };
         }
         return { error: `Error de la API: ${errorData.message || response.statusText}` };
     }
@@ -45,7 +43,7 @@ export async function searchVerses(
     const verses = data.data.verses.map((verse: any) => ({
       id: verse.id,
       reference: verse.reference,
-      text: verse.text.replace(/<[^>]*>/g, '').trim(), // Strip HTML tags from verse text
+      text: verse.text, 
     }));
 
     return {
@@ -55,7 +53,7 @@ export async function searchVerses(
     };
 
   } catch (error: any) {
-    console.error("Network or parsing error:", error);
+    console.error("Error de red o de análisis:", error);
     return { error: `Ha ocurrido un error de red: ${error.message}` };
   }
 }

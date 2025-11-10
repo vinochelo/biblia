@@ -27,8 +27,10 @@ export function VerseSearch() {
   const [apiKey, setApiKey] = useState<string | null>(null);
 
   useEffect(() => {
-    // Client-side only: retrieve API key from localStorage
-    setApiKey(localStorage.getItem("bible-api-key"));
+    const key = localStorage.getItem("bible-api-key");
+    if (key) {
+      setApiKey(key);
+    }
   }, []);
 
   const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
