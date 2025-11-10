@@ -33,7 +33,7 @@ const januaryPlan: Reading[] = [
     { month: 1, day: 25, passages: ["Mateo 25", "Génesis 12, 13", "Salmos 11"] },
     { month: 1, day: 26, passages: ["Mateo 26", "Génesis 14, 15", "Proverbios 5"] },
     { month: 1, day: 27, passages: ["Mateo 27", "Génesis 16, 17"] },
-    { month: 1, day: 28, passages: ["Mateo 28", "Génesis 18, 19"] },
+    { month: 1, day: 28, passages: ["Mateo 28", "Génesis 15, 16", "Proverbios 6"] },
     { month: 1, day: 29, passages: ["Hechos 1", "Génesis 20, 21, 22"] },
     { month: 1, day: 30, passages: ["Hechos 2", "Génesis 23", "Salmos 12"] },
     { month: 1, day: 31, passages: ["Hechos 3", "Génesis 24", "Salmos 13"] }
