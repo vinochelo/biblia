@@ -7,7 +7,7 @@ const API_BASE_URL = 'https://api.scripture.api.bible/v1';
 export async function searchVerses(
   query: string,
   versionId: string,
-  apiKey: string | null
+  apiKey: string
 ): Promise<SearchResult | { error: string }> {
   if (!apiKey) {
     return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
