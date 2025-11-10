@@ -2,7 +2,7 @@
 
 import type { SearchResult } from '@/lib/types';
 
-const API_BASE_URL = 'https://api.scripture.api.bible/v1';
+const API_BASE_URL = 'https://rest.api.bible';
 
 export async function searchVerses(
   query: string,
@@ -18,7 +18,7 @@ export async function searchVerses(
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/bibles/${versionId}/search?query=${encodeURIComponent(query)}&sort=relevance`, {
+    const response = await fetch(`${API_BASE_URL}/v1/bibles/${versionId}/search?query=${encodeURIComponent(query)}&sort=relevance`, {
       headers: {
         'api-key': apiKey,
       },
