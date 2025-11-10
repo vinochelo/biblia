@@ -159,7 +159,7 @@ export function BibleReader() {
                 <SelectContent>
                     {chapters.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                        {c.reference}
+                        Capítulo {c.number}
                     </SelectItem>
                     ))}
                 </SelectContent>
