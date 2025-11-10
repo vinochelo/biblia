@@ -29,16 +29,48 @@ const januaryPlan: Reading[] = [
     { month: 1, day: 21, passages: ["Mateo 21", "Job 34, 35", "Salmos 9"] },
     { month: 1, day: 22, passages: ["Mateo 22", "Job 36, 37", "Proverbios 4"] },
     { month: 1, day: 23, passages: ["Mateo 23", "Job 38, 39"] },
-    { month: 1, day: 24, passages: ["Mateo 24", "Job 40, 41", "Salmos 10"] },
-    { month: 1, day: 25, passages: ["Mateo 25", "Job 42", "Salmos 11"] },
-    { month: 1, day: 26, passages: ["Mateo 26", "Génesis 12", "Proverbios 5"] },
-    { month: 1, day: 27, passages: ["Mateo 27", "Génesis 13, 14"] },
-    { month: 1, day: 28, passages: ["Mateo 28", "Génesis 15, 16", "Proverbios 6"] },
-    { month: 1, day: 29, passages: ["Hechos 1", "Génesis 17, 18"] },
-    { month: 1, day: 30, passages: ["Hechos 2", "Génesis 19, 20", "Salmos 12"] },
-    { month: 1, day: 31, passages: ["Hechos 3", "Génesis 21, 22", "Salmos 13"] }
+    { month: 1, day: 24, passages: ["Mateo 24", "Job 40, 41, 42", "Salmos 10"] },
+    { month: 1, day: 25, passages: ["Mateo 25", "Génesis 12", "Salmos 11"] },
+    { month: 1, day: 26, passages: ["Mateo 26", "Génesis 13, 14", "Proverbios 5"] },
+    { month: 1, day: 27, passages: ["Mateo 27", "Génesis 15, 16"] },
+    { month: 1, day: 28, passages: ["Mateo 28", "Génesis 17, 18", "Proverbios 6"] },
+    { month: 1, day: 29, passages: ["Hechos 1", "Génesis 19, 20"] },
+    { month: 1, day: 30, passages: ["Hechos 2", "Génesis 21, 22", "Salmos 12"] },
+    { month: 1, day: 31, passages: ["Hechos 3", "Génesis 23, 24", "Salmos 13"] }
+];
+
+const februaryPlan: Reading[] = [
+    { month: 2, day: 1, passages: ["Hechos 4", "Génesis 23, 24", "Proverbios 7"] },
+    { month: 2, day: 2, passages: ["Hechos 5", "Génesis 25, 26"] },
+    { month: 2, day: 3, passages: ["Hechos 6", "Génesis 27, 28", "Salmos 14"] },
+    { month: 2, day: 4, passages: ["Hechos 7", "Génesis 29, 30"] },
+    { month: 2, day: 5, passages: ["Hechos 8", "Génesis 31, 32", "Salmos 15"] },
+    { month: 2, day: 6, passages: ["Hechos 9", "Génesis 33, 34"] },
+    { month: 2, day: 7, passages: ["Hechos 10", "Génesis 35, 36", "Salmos 16"] },
+    { month: 2, day: 8, passages: ["Hechos 11", "Génesis 37, 38"] },
+    { month: 2, day: 9, passages: ["Hechos 12", "Génesis 39, 40", "Salmos 17"] },
+    { month: 2, day: 10, passages: ["Hechos 13", "Génesis 41, 42"] },
+    { month: 2, day: 11, passages: ["Hechos 14", "Génesis 43, 44", "Proverbios 8"] },
+    { month: 2, day: 12, passages: ["Hechos 15", "Génesis 45, 46"] },
+    { month: 2, day: 13, passages: ["Hechos 16", "Génesis 47, 48", "Salmos 18"] },
+    { month: 2, day: 14, passages: ["Hechos 17", "Génesis 49, 50"] },
+    { month: 2, day: 15, passages: ["Hechos 18", "Éxodo 1, 2", "Proverbios 9"] },
+    { month: 2, day: 16, passages: ["Hechos 19", "Éxodo 3, 4"] },
+    { month: 2, day: 17, passages: ["Hechos 20", "Éxodo 5, 6", "Salmos 19"] },
+    { month: 2, day: 18, passages: ["Hechos 21", "Éxodo 7, 8"] },
+    { month: 2, day: 19, passages: ["Hechos 22", "Éxodo 9, 10", "Salmos 20"] },
+    { month: 2, day: 20, passages: ["Hechos 23", "Éxodo 11, 12"] },
+    { month: 2, day: 21, passages: ["Hechos 24", "Éxodo 13, 14", "Salmos 21"] },
+    { month: 2, day: 22, passages: ["Hechos 25", "Éxodo 15, 16"] },
+    { month: 2, day: 23, passages: ["Hechos 26", "Éxodo 17, 18", "Proverbios 10"] },
+    { month: 2, day: 24, passages: ["Hechos 27", "Éxodo 19, 20"] },
+    { month: 2, day: 25, passages: ["Hechos 28", "Éxodo 21, 22", "Salmos 22"] },
+    { month: 2, day: 26, passages: ["Marcos 1", "Éxodo 23, 24", "Salmos 23"] },
+    { month: 2, day: 27, passages: ["Marcos 2", "Éxodo 25, 26"] },
+    { month: 2, day: 28, passages: ["Marcos 3", "Éxodo 27, 28", "Proverbios 11"] }
 ];
 
 export const studyPlan: Reading[] = [
-    ...januaryPlan
+    ...januaryPlan,
+    ...februaryPlan
 ];
