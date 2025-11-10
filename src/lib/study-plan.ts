@@ -103,8 +103,42 @@ const marchPlan: Reading[] = [
     { month: 3, day: 31, passages: ["Lucas 2", "Números 23, 24", "Salmos 35"] }
 ];
 
+const aprilPlan: Reading[] = [
+    { month: 4, day: 1, passages: ["Lucas 3", "Números 25, 26", "Proverbios 18"] },
+    { month: 4, day: 2, passages: ["Lucas 4", "Números 27, 28"] },
+    { month: 4, day: 3, passages: ["Lucas 5", "Números 29, 30", "Salmos 36"] },
+    { month: 4, day: 4, passages: ["Lucas 6", "Números 31, 32"] },
+    { month: 4, day: 5, passages: ["Lucas 7", "Números 33, 34", "Salmos 37"] },
+    { month: 4, day: 6, passages: ["Lucas 8", "Números 35, 36"] },
+    { month: 4, day: 7, passages: ["Lucas 9", "Deut. 1, 2", "Salmos 38"] },
+    { month: 4, day: 8, passages: ["Lucas 10", "Deut. 3, 4"] },
+    { month: 4, day: 9, passages: ["Lucas 11", "Deut. 5, 6", "Proverbios 19"] },
+    { month: 4, day: 10, passages: ["Lucas 12", "Deut. 7, 8"] },
+    { month: 4, day: 11, passages: ["Lucas 13", "Deut. 9, 10", "Salmos 39"] },
+    { month: 4, day: 12, passages: ["Lucas 14", "Deut. 11, 12"] },
+    { month: 4, day: 13, passages: ["Lucas 15", "Deut. 13, 14", "Salmos 40"] },
+    { month: 4, day: 14, passages: ["Lucas 16", "Deut. 15, 16"] },
+    { month: 4, day: 15, passages: ["Lucas 17", "Deut. 17, 18", "Salmos 41"] },
+    { month: 4, day: 16, passages: ["Lucas 18", "Deut. 19, 20"] },
+    { month: 4, day: 17, passages: ["Lucas 19", "Deut. 21, 22", "Proverbios 20"] },
+    { month: 4, day: 18, passages: ["Lucas 20", "Deut. 23, 24"] },
+    { month: 4, day: 19, passages: ["Lucas 21", "Deut. 25", "Salmos 42"] },
+    { month: 4, day: 20, passages: ["Lucas 22", "Deut. 26, 27"] },
+    { month: 4, day: 21, passages: ["Lucas 23", "Deut. 28", "Salmos 43"] },
+    { month: 4, day: 22, passages: ["Lucas 24", "Deut. 29, 30"] },
+    { month: 4, day: 23, passages: ["1Corintios 1", "Deut. 31, 32", "Proverbios 21"] },
+    { month: 4, day: 24, passages: ["1Corintios 2", "Deut. 33, 34"] },
+    { month: 4, day: 25, passages: ["1Corintios 3", "Josué 1, 2", "Salmos 44"] },
+    { month: 4, day: 26, passages: ["1Corintios 4", "Josué 3, 4"] },
+    { month: 4, day: 27, passages: ["1Corintios 5", "Josué 5, 6", "Salmos 45"] },
+    { month: 4, day: 28, passages: ["1Corintios 6", "Josué 7, 8"] },
+    { month: 4, day: 29, passages: ["1Corintios 7", "Josué 9, 10", "Proverbios 22"] },
+    { month: 4, day: 30, passages: ["1Corintios 8", "Josué 11, 12", "Salmos 46"] }
+];
+
 export const studyPlan: Reading[] = [
     ...januaryPlan,
     ...februaryPlan,
-    ...marchPlan
+    ...marchPlan,
+    ...aprilPlan
 ];
