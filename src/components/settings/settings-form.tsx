@@ -15,18 +15,12 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { KeyRound, Save } from "lucide-react";
-
-const API_KEY_STORAGE_KEY = "bible-api-key";
+import { Save } from "lucide-react";
 
 const settingsFormSchema = z.object({
-  apiKey: z.string().min(10, {
-    message: "La clave API debe tener al menos 10 caracteres.",
-  }).or(z.literal("")),
   plan: z.enum(["non-commercial", "commercial"], {
     required_error: "Debes seleccionar un plan.",
   }),
@@ -40,58 +34,21 @@ export function SettingsForm() {
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
     defaultValues: {
-      apiKey: "",
       plan: "non-commercial",
       overageProtection: true,
     }
   });
 
-  useEffect(() => {
-    const savedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-    if (savedApiKey) {
-      form.setValue("apiKey", savedApiKey);
-    }
-  }, [form]);
-
   function onSubmit(data: SettingsFormValues) {
-    if (data.apiKey) {
-      localStorage.setItem(API_KEY_STORAGE_KEY, data.apiKey);
-      toast({
-        title: "Configuración guardada",
-        description: "Tu clave API ha sido guardada de forma segura en tu navegador.",
-      });
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-      toast({
-        title: "Clave API eliminada",
-        description: "Tu clave API ha sido eliminada de tu navegador.",
-      });
-    }
+    toast({
+      title: "Preferencias guardadas",
+      description: "Tus preferencias de plan han sido guardadas.",
+    });
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        <FormField
-          control={form.control}
-          name="apiKey"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Clave API de API.Bible</FormLabel>
-              <div className="relative">
-                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <FormControl>
-                  <Input type="password" placeholder="••••••••••••••••••••" {...field} className="pl-9" />
-                </FormControl>
-              </div>
-              <FormDescription>
-                Tu clave API se almacena de forma segura en tu navegador.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
         <FormField
           control={form.control}
           name="plan"

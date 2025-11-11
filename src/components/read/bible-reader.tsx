@@ -37,12 +37,11 @@ export function BibleReader() {
   const router = useRouter();
   const chapterFromUrl = searchParams.get('chapter');
 
-  const [apiKey, setApiKey] = useState<string | null>(null);
   const [version, setVersion] = useState<string>(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
-  const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
+  const [selectedChapter, setSelectedChapter] useState<string | null>(null);
   const [chapterContent, setChapterContent] = useState<Chapter | null>(null);
   
   const [isLoading, setIsLoading] = useState({
@@ -62,9 +61,6 @@ export function BibleReader() {
 
 
   useEffect(() => {
-    const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
-    setApiKey(key);
-
     const savedVersion = localStorage.getItem(BIBLE_VERSION_STORAGE_KEY);
     if (savedVersion && bibleVersions.some(v => v.id === savedVersion)) {
         setVersion(savedVersion);
@@ -82,7 +78,7 @@ export function BibleReader() {
     router.replace(`/read`, { scroll: false });
   };
 
-  const fetchChapterContent = useCallback(async (versionId: string, chapterId: string, key: string) => {
+  const fetchChapterContent = useCallback(async (versionId: string, chapterId: string) => {
     setIsLoading(p => ({ ...p, content: true }));
     setError(null);
     setChapterContent(null);
@@ -90,7 +86,7 @@ export function BibleReader() {
     router.replace(`/read?chapter=${chapterId}`, { scroll: false });
 
     trackApiCall();
-    const response = await getChapter(versionId, chapterId, key);
+    const response = await getChapter(versionId, chapterId);
     if ("error" in response) {
       setError(response.error);
     } else {
@@ -99,13 +95,13 @@ export function BibleReader() {
     setIsLoading(p => ({ ...p, content: false }));
   }, [router]);
 
-  const fetchChapters = useCallback(async (versionId: string, bookId: string, key: string) => {
+  const fetchChapters = useCallback(async (versionId: string, bookId: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
     setError(null);
     setChapters([]);
     
     trackApiCall();
-    const response = await getChapters(versionId, bookId, key);
+    const response = await getChapters(versionId, bookId);
     if ("error" in response) {
       setError(response.error);
     } else {
@@ -122,16 +118,12 @@ export function BibleReader() {
   }, [chapterFromUrl]);
 
   useEffect(() => {
-    if (!apiKey) {
-      setError("Por favor, configura tu clave API en la página de configuración.");
-      return;
-    }
     setError(null);
     setIsLoading(p => ({ ...p, books: true }));
     
     async function fetchInitialData() {
       trackApiCall();
-      const booksResponse = await getBooks(version, apiKey!);
+      const booksResponse = await getBooks(version);
       if ("error" in booksResponse) {
         setError(booksResponse.error);
         setBooks([]);
@@ -147,19 +139,19 @@ export function BibleReader() {
       setIsLoading(p => ({ ...p, books: false }));
     }
     fetchInitialData();
-  }, [version, apiKey, chapterFromUrl]);
+  }, [version, chapterFromUrl]);
 
   useEffect(() => {
-    if (selectedBook && apiKey) {
-        fetchChapters(version, selectedBook, apiKey);
+    if (selectedBook) {
+        fetchChapters(version, selectedBook);
     }
-  }, [selectedBook, version, apiKey, fetchChapters]);
+  }, [selectedBook, version, fetchChapters]);
 
   useEffect(() => {
-    if (selectedChapter && apiKey) {
-        fetchChapterContent(version, selectedChapter, apiKey);
+    if (selectedChapter) {
+        fetchChapterContent(version, selectedChapter);
     }
-  }, [selectedChapter, version, apiKey, fetchChapterContent]);
+  }, [selectedChapter, version, fetchChapterContent]);
 
   const handleBookChange = (bookId: string) => {
     setSelectedBook(bookId);
@@ -358,7 +350,3 @@ export function BibleReader() {
     </div>
   );
 }
-
-    
-
-    

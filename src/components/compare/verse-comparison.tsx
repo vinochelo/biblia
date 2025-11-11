@@ -33,7 +33,6 @@ export function VerseComparison() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [apiKey, setApiKey] = useState<string | null>(null);
   const [verseQuery, setVerseQuery] = useState("1");
   const [reference, setReference] = useState<string | null>(null);
   
@@ -60,9 +59,6 @@ export function VerseComparison() {
   const [error, setError] = useState<string | null>(null);
 
    useEffect(() => {
-    const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
-    setApiKey(key);
-    
     const savedCompareVersion = localStorage.getItem(BIBLE_VERSION_STORAGE_KEY_COMPARE);
      if (savedCompareVersion && bibleVersions.some(v => v.id === savedCompareVersion)) {
         setVersions([savedCompareVersion]);
@@ -78,10 +74,10 @@ export function VerseComparison() {
     
   }, []);
 
-  const fetchBooks = useCallback(async (versionId: string, key: string) => {
+  const fetchBooks = useCallback(async (versionId: string) => {
     setIsLoading(p => ({ ...p, books: true }));
     trackApiCall();
-    const booksResponse = await getBooks(versionId, key);
+    const booksResponse = await getBooks(versionId);
     if ("error" in booksResponse) {
         setError(booksResponse.error);
         setBooks([]);
@@ -95,11 +91,11 @@ export function VerseComparison() {
     setIsLoading(p => ({ ...p, books: false }));
   }, []);
 
-  const fetchChapterList = useCallback(async (versionId: string, bookId: string, key: string) => {
+  const fetchChapterList = useCallback(async (versionId: string, bookId: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
     setChapters([]);
     trackApiCall();
-    const response = await getChapters(versionId, bookId, key);
+    const response = await getChapters(versionId, bookId);
     if ("error" in response) {
       setError(response.error);
     } else {
@@ -113,16 +109,16 @@ export function VerseComparison() {
   }, []);
   
   useEffect(() => {
-      if (apiKey && versions.length > 0) {
-        fetchBooks(versions[0], apiKey);
+      if (versions.length > 0) {
+        fetchBooks(versions[0]);
       }
-  }, [apiKey, versions, fetchBooks]);
+  }, [versions, fetchBooks]);
 
   useEffect(() => {
-      if (selectedBook && apiKey && versions.length > 0) {
-        fetchChapterList(versions[0], selectedBook, apiKey);
+      if (selectedBook && versions.length > 0) {
+        fetchChapterList(versions[0], selectedBook);
       }
-  }, [selectedBook, apiKey, versions, fetchChapterList]);
+  }, [selectedBook, versions, fetchChapterList]);
 
 
   const handleVersionToggle = (versionId: string) => {
@@ -135,10 +131,6 @@ export function VerseComparison() {
   
   const handleCompare = async (event?: React.FormEvent<HTMLFormElement>) => {
     if (event) event.preventDefault();
-    if (!apiKey) {
-      setError("Por favor, configura tu clave API en la página de configuración.");
-      return;
-    }
     if (!selectedBook || !selectedChapter || !verseQuery) {
       setError("Por favor, selecciona libro, capítulo y número de versículo.");
       return;
@@ -164,7 +156,7 @@ export function VerseComparison() {
       selectedVersions.map(async (versionId) => {
         const version = bibleVersions.find((v) => v.id === versionId)!;
         trackApiCall();
-        const verse = await getVerse(versionId, verseId, apiKey);
+        const verse = await getVerse(versionId, verseId);
         if ("error" in verse) {
             // Check if the error is "not found" and provide a friendlier message
             if (typeof verse.error === 'string' && verse.error.toLowerCase().includes('not found')) {
@@ -185,7 +177,7 @@ export function VerseComparison() {
     }
     
     setComparisonResults(results);
-    setIsLoading(p => ({ ...p, content: false }));
+setIsLoading(p => ({ ...p, content: false }));
   };
 
   const handleBookChange = (bookId: string) => {
@@ -323,5 +315,3 @@ export function VerseComparison() {
     </div>
   );
 }
-
-    

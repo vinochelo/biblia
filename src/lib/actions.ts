@@ -4,76 +4,19 @@ import type { SearchResult, Book, ChapterSummary, Chapter, Verse } from '@/lib/t
 
 const API_BASE_URL = 'https://rest.api.bible';
 
+// La clave API ahora se lee de forma segura desde las variables de entorno del servidor.
+const apiKey = process.env.BIBLE_API_KEY;
+
 const trackApiCall = () => {
   // This is a server action, it cannot directly modify client-side localStorage.
   // The client will be responsible for tracking its own API calls.
   // We can, however, log this server-side if needed.
 };
 
-export async function searchVerses(
-  query: string,
-  versionId: string,
-  apiKey: string
-): Promise<SearchResult | { error: string }> {
+async function apiCall<T>(path: string, params?: Record<string, string>): Promise<T | { error: string }> {
   trackApiCall();
   if (!apiKey) {
-    return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
-  }
-  
-  if (!query) {
-    return { verses: [], total: 0, bibleId: versionId };
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/v1/bibles/${versionId}/search?query=${encodeURIComponent(query)}&sort=relevance`, {
-      headers: {
-        'api-key': apiKey,
-      },
-      cache: 'no-store' 
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        const errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
-        console.error("API Error:", response.status, errorMessage);
-        
-        if (response.status === 401 || (typeof errorMessage === 'string' && errorMessage.includes('API key'))) {
-             return { error: 'Clave API no válida o sin permisos. Verifica tu clave e inténtalo de nuevo.' };
-        }
-
-        return { error: `Error de la API: ${errorMessage}` };
-    }
-
-    const data = await response.json();
-
-    if (!data.data) {
-      return { verses: [], total: 0, bibleId: versionId };
-    }
-    
-    const versesData = data.data.verses || [];
-
-    const verses = versesData.map((verse: any) => ({
-      id: verse.id,
-      reference: verse.reference,
-      text: verse.text, 
-    }));
-
-    return {
-      verses,
-      total: data.data.total || 0,
-      bibleId: versionId,
-    };
-
-  } catch (error: any) {
-    console.error("Error de red o de análisis:", error);
-    return { error: `Ha ocurrido un error de red o de comunicación: ${error.message}` };
-  }
-}
-
-async function apiCall<T>(path: string, apiKey: string, params?: Record<string, string>): Promise<T | { error: string }> {
-  trackApiCall();
-  if (!apiKey) {
-    return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
+    return { error: 'La clave API del servidor no está configurada. El administrador del sitio debe configurarla.' };
   }
 
   try {
@@ -94,7 +37,7 @@ async function apiCall<T>(path: string, apiKey: string, params?: Record<string, 
       const errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
       console.error("API Error:", response.status, errorMessage);
       if (response.status === 401 || (typeof errorMessage === 'string' && errorMessage.includes('API key'))) {
-           return { error: 'Clave API no válida o sin permisos. Verifica tu clave e inténtalo de nuevo.' };
+           return { error: 'La clave API del servidor no es válida o no tiene permisos.' };
       }
       return { error: `Error de la API: ${errorMessage}` };
     }
@@ -108,16 +51,48 @@ async function apiCall<T>(path: string, apiKey: string, params?: Record<string, 
   }
 }
 
+export async function searchVerses(
+  query: string,
+  versionId: string,
+): Promise<SearchResult | { error: string }> {
+  if (!query) {
+    return { verses: [], total: 0, bibleId: versionId };
+  }
 
-export async function getBooks(versionId: string, apiKey: string): Promise<Book[] | { error: string }> {
-    return apiCall<Book[]>(`/v1/bibles/${versionId}/books`, apiKey);
+  const result = await apiCall<any>(`/v1/bibles/${versionId}/search?query=${encodeURIComponent(query)}&sort=relevance`);
+
+  if ('error' in result) {
+    return result;
+  }
+  
+  if (!result) {
+    return { verses: [], total: 0, bibleId: versionId };
+  }
+
+  const versesData = result.verses || [];
+  const verses = versesData.map((verse: any) => ({
+    id: verse.id,
+    reference: verse.reference,
+    text: verse.text, 
+  }));
+
+  return {
+    verses,
+    total: result.total || 0,
+    bibleId: versionId,
+  };
 }
 
-export async function getChapters(versionId: string, bookId: string, apiKey: string): Promise<ChapterSummary[] | { error: string }> {
-    return apiCall<ChapterSummary[]>(`/v1/bibles/${versionId}/books/${bookId}/chapters`, apiKey);
+
+export async function getBooks(versionId: string): Promise<Book[] | { error: string }> {
+    return apiCall<Book[]>(`/v1/bibles/${versionId}/books`);
 }
 
-export async function getChapter(versionId: string, chapterId: string, apiKey: string): Promise<Chapter | { error: string }> {
+export async function getChapters(versionId: string, bookId: string): Promise<ChapterSummary[] | { error: string }> {
+    return apiCall<ChapterSummary[]>(`/v1/bibles/${versionId}/books/${bookId}/chapters`);
+}
+
+export async function getChapter(versionId: string, chapterId: string): Promise<Chapter | { error: string }> {
     const params = {
         'content-type': 'html',
         'include-notes': 'false',
@@ -126,10 +101,10 @@ export async function getChapter(versionId: string, chapterId: string, apiKey: s
         'include-verse-numbers': 'true',
         'include-verse-spans': 'false'
     };
-    return apiCall<Chapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`, apiKey, params);
+    return apiCall<Chapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`, params);
 }
 
-export async function getVerse(versionId: string, verseId: string, apiKey: string): Promise<Verse | { error: string }> {
+export async function getVerse(versionId: string, verseId: string): Promise<Verse | { error: string }> {
   const params = {
     'content-type': 'text',
     'include-notes': 'false',
@@ -138,7 +113,7 @@ export async function getVerse(versionId: string, verseId: string, apiKey: strin
     'include-verse-numbers': 'false',
     'include-verse-spans': 'false',
   };
-  const result = await apiCall<{id: string; reference: string; content: string}>(`/v1/bibles/${versionId}/verses/${verseId}`, apiKey, params);
+  const result = await apiCall<{id: string; reference: string; content: string}>(`/v1/bibles/${versionId}/verses/${verseId}`, params);
   if ('error' in result) {
     return result;
   }

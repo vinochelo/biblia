@@ -26,24 +26,11 @@ export function VerseSearch() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
-    setApiKey(key);
-  }, []);
 
   const handleSearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const query = formData.get("query") as string;
-
-    if (!apiKey) {
-      setError("Por favor, configura tu clave API en la página de configuración.");
-      setResults(null);
-      setHasSearched(true);
-      return;
-    }
 
     if (!query) {
       setError("Por favor, introduce un término de búsqueda.");
@@ -58,7 +45,7 @@ export function VerseSearch() {
     setResults(null);
     
     trackApiCall();
-    const response = await searchVerses(query, version, apiKey);
+    const response = await searchVerses(query, version);
     if ("error" in response) {
       setError(response.error);
     } else {
