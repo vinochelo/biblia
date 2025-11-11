@@ -41,7 +41,7 @@ export function BibleReader() {
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
-  const [selectedChapter, setSelectedChapter] useState<string | null>(null);
+  const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [chapterContent, setChapterContent] = useState<Chapter | null>(null);
   
   const [isLoading, setIsLoading] = useState({
@@ -350,3 +350,5 @@ export function BibleReader() {
     </div>
   );
 }
+
+    
