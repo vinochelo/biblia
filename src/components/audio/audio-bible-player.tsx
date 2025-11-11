@@ -20,7 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-const AUDIO_BIBLE_ID = "b833918a54be2f62-01";
+const AUDIO_BIBLE_ID = "6b7f504f1b6050c1-01"; // Switched to NBV which is more likely to be authorized
 const LAST_AUDIO_BOOK_STORAGE_KEY = "last-audio-book-id";
 const LAST_AUDIO_CHAPTER_STORAGE_KEY = "last-audio-chapter-id";
 
@@ -67,7 +67,7 @@ function AudioBiblePlayerContent() {
     setError(null);
     setChapters([]);
     
-    const response = await getAudioChapters(AUDIO_Bible_ID, bookId);
+    const response = await getAudioChapters(AUDIO_BIBLE_ID, bookId);
     if ("error" in response) {
       setError(response.error);
     } else {
@@ -177,6 +177,7 @@ function AudioBiblePlayerContent() {
   };
 
   const formatTime = (time: number) => {
+    if (isNaN(time) || time === 0) return '0:00';
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -307,3 +308,5 @@ export function AudioBiblePlayer() {
     </Suspense>
   )
 }
+
+    
