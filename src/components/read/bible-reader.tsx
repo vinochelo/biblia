@@ -76,15 +76,13 @@ function BibleReaderContent() {
     setChapters([]);
     setSelectedChapter(null);
     setChapterContent(null);
-    router.replace(`/read`, { scroll: false });
+    router.push(`/read`, { scroll: false });
   };
 
   const fetchChapterContent = useCallback(async (versionId: string, chapterId: string) => {
     setIsLoading(p => ({ ...p, content: true }));
     setError(null);
     setChapterContent(null);
-    
-    router.replace(`/read?chapter=${chapterId}`, { scroll: false });
 
     trackApiCall();
     const response = await getChapter(versionId, chapterId);
@@ -94,7 +92,7 @@ function BibleReaderContent() {
       setChapterContent(response);
     }
     setIsLoading(p => ({ ...p, content: false }));
-  }, [router]);
+  }, []);
 
   const fetchChapters = useCallback(async (versionId: string, bookId: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
@@ -149,14 +147,15 @@ function BibleReaderContent() {
   useEffect(() => {
     if (selectedChapter) {
         fetchChapterContent(version, selectedChapter);
+        router.push(`/read?chapter=${selectedChapter}`, { scroll: false });
     }
-  }, [selectedChapter, version, fetchChapterContent]);
+  }, [selectedChapter, version, fetchChapterContent, router]);
 
   const handleBookChange = (bookId: string) => {
     setSelectedBook(bookId);
     setSelectedChapter(null);
     setChapterContent(null);
-    router.replace(`/read?book=${bookId}`, { scroll: false });
+    router.push(`/read?book=${bookId}`, { scroll: false });
   };
 
   const handleChapterChange = (chapterId: string) => {
@@ -352,10 +351,6 @@ function BibleReaderContent() {
 
 export function BibleReader() {
   return (
-    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
       <BibleReaderContent />
-    </Suspense>
   )
 }
-
-    

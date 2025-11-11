@@ -12,10 +12,10 @@ export default function ReadPage() {
                 Selecciona un libro y un capítulo para comenzar tu lectura.
             </p>
         </div>
-        <BibleReader />
+        <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+          <BibleReader />
+        </Suspense>
       </div>
     </div>
   );
 }
-
-    
