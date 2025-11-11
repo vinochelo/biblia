@@ -35,10 +35,11 @@ async function apiCall<T>(path: string, params?: Record<string, string>): Promis
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      const errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
+      let errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
       console.error("API Error:", response.status, errorMessage);
-      if (response.status === 401 || (typeof errorMessage === 'string' && errorMessage.includes('API key'))) {
-           return { error: 'La clave API del servidor no es válida o no tiene permisos.' };
+
+      if (response.status === 401 || (typeof errorMessage === 'string' && (errorMessage.includes('API key') || errorMessage.includes('authorized')))) {
+           errorMessage = 'La clave API del servidor no es válida o no tiene permisos para acceder a este recurso. Verifique la clave y los permisos en su cuenta de rest.api.bible.';
       }
       return { error: `Error de la API: ${errorMessage}` };
     }

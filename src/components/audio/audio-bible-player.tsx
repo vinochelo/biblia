@@ -36,7 +36,7 @@ function AudioBiblePlayerContent() {
   const [chapterContent, setChapterContent] = useState<AudioChapter | null>(null);
   
   const [isLoading, setIsLoading] = useState({
-    books: true,
+    books: false,
     chapters: false,
     content: false,
   });
@@ -93,27 +93,28 @@ function AudioBiblePlayerContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    setError(null);
-    setIsLoading(p => ({ ...p, books: true }));
-    
     async function fetchInitialData() {
+      setIsLoading(p => ({ ...p, books: true }));
+      setError(null);
       const booksResponse = await getBooks(AUDIO_BIBLE_ID);
+      setIsLoading(p => ({ ...p, books: false }));
+
       if ("error" in booksResponse) {
         setError(booksResponse.error);
         setBooks([]);
-      } else {
-        setBooks(booksResponse);
-        const chapterIdFromUrl = searchParams.get('chapter');
-        const bookIdFromUrl = chapterIdFromUrl?.split('.')[0] || searchParams.get('book');
-        const lastBook = localStorage.getItem(LAST_AUDIO_BOOK_STORAGE_KEY);
-        
-        let bookToSelect = bookIdFromUrl || lastBook;
+        return;
+      } 
+      
+      setBooks(booksResponse);
+      const chapterIdFromUrl = searchParams.get('chapter');
+      const bookIdFromUrl = chapterIdFromUrl?.split('.')[0] || searchParams.get('book');
+      const lastBook = localStorage.getItem(LAST_AUDIO_BOOK_STORAGE_KEY);
+      
+      let bookToSelect = bookIdFromUrl || lastBook;
 
-        if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
-            setSelectedBook(bookToSelect);
-        }
+      if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
+          setSelectedBook(bookToSelect);
       }
-      setIsLoading(p => ({ ...p, books: false }));
     }
     fetchInitialData();
   }, [searchParams]);
@@ -202,7 +203,7 @@ function AudioBiblePlayerContent() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select value={selectedBook ?? ""} onValueChange={handleBookChange} disabled={isLoading.books || books.length === 0}>
                 <SelectTrigger className="w-full">
-                    <SelectValue placeholder={isLoading.books ? "Cargando..." : "Seleccionar libro"} />
+                    <SelectValue placeholder={isLoading.books ? "Cargando libros..." : "Seleccionar libro"} />
                 </SelectTrigger>
                 <SelectContent>
                     {books.map((b) => (
@@ -215,7 +216,7 @@ function AudioBiblePlayerContent() {
 
             <Select value={selectedChapter ?? ""} onValueChange={handleChapterChange} disabled={isLoading.chapters || chapters.length === 0}>
                 <SelectTrigger className="w-full">
-                    <SelectValue placeholder={isLoading.chapters ? "Cargando..." : "Seleccionar capítulo"} />
+                    <SelectValue placeholder={isLoading.chapters ? "Cargando capítulos..." : "Seleccionar capítulo"} />
                 </SelectTrigger>
                 <SelectContent>
                     {chapters.map((c) => (
@@ -236,7 +237,7 @@ function AudioBiblePlayerContent() {
                 </Alert>
             )}
 
-            {isLoading.content && (
+            {(isLoading.books || isLoading.content) && !error && (
                 <div className="flex justify-center items-center h-full pt-10">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
@@ -308,5 +309,3 @@ export function AudioBiblePlayer() {
     </Suspense>
   )
 }
-
-    
