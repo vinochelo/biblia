@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { BookOpen, Settings, BookText, CalendarCheck } from 'lucide-react';
+import { BookOpen, Settings, BookText, CalendarCheck, Columns } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Header() {
@@ -19,6 +19,11 @@ export function Header() {
           <Button variant="ghost" size="icon" asChild>
             <Link href="/read" aria-label="Leer la Biblia">
               <BookText className="h-5 w-5" />
+            </Link>
+          </Button>
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/compare" aria-label="Comparar Versiones">
+              <Columns className="h-5 w-5" />
             </Link>
           </Button>
           <Button variant="ghost" size="icon" asChild>
