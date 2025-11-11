@@ -8,6 +8,7 @@ import { Loader2, Terminal, BookOpen } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
+import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { trackApiCall } from "@/lib/utils";
 
 import {
@@ -21,7 +22,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -29,15 +29,15 @@ import {
   DialogTitle,
   DialogDescription
 } from "@/components/ui/dialog";
+import { ScrollArea } from "../ui/scroll-area";
+import Link from "next/link";
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 
 function BibleReaderContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const chapterFromUrl = searchParams.get('chapter');
-  const bookFromUrl = searchParams.get('book');
-
+  
   const [version, setVersion] = useState<string>(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
@@ -46,10 +46,11 @@ function BibleReaderContent() {
   const [chapterContent, setChapterContent] = useState<Chapter | null>(null);
   
   const [isLoading, setIsLoading] = useState({
-    books: false,
+    books: true,
     chapters: false,
     content: false,
     dictionary: false,
+    concordance: false,
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +59,7 @@ function BibleReaderContent() {
   const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
   const [isDictionaryOpen, setIsDictionaryOpen] = useState(false);
   const [dictionaryResult, setDictionaryResult] = useState<{term: string, definition: string, reference?: string} | null>(null);
+  const [concordanceResult, setConcordanceResult] = useState<ConcordanceOutput | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
 
@@ -71,12 +73,11 @@ function BibleReaderContent() {
   const handleVersionChange = (newVersion: string) => {
     setVersion(newVersion);
     localStorage.setItem(BIBLE_VERSION_STORAGE_KEY, newVersion);
-    // Reset selections when version changes
     setSelectedBook(null);
     setChapters([]);
     setSelectedChapter(null);
     setChapterContent(null);
-    router.push(`/read`, { scroll: false });
+    router.push(`/read`);
   };
 
   const fetchChapterContent = useCallback(async (versionId: string, chapterId: string) => {
@@ -105,16 +106,16 @@ function BibleReaderContent() {
       setError(response.error);
     } else {
       setChapters(response);
-      const chapterFromUrlExists = response.some(c => c.id === chapterFromUrl);
-      if (chapterFromUrl && chapterFromUrl.startsWith(bookId) && chapterFromUrlExists) {
-           setSelectedChapter(chapterFromUrl);
+      const chapterIdFromUrl = searchParams.get('chapter');
+      if (chapterIdFromUrl && chapterIdFromUrl.startsWith(bookId) && response.some(c => c.id === chapterIdFromUrl)) {
+           setSelectedChapter(chapterIdFromUrl);
       } else {
           setSelectedChapter(null);
           setChapterContent(null);
       }
     }
     setIsLoading(p => ({ ...p, chapters: false }));
-  }, [chapterFromUrl]);
+  }, [searchParams]);
 
   useEffect(() => {
     setError(null);
@@ -128,7 +129,8 @@ function BibleReaderContent() {
         setBooks([]);
       } else {
         setBooks(booksResponse);
-        const bookIdFromUrl = chapterFromUrl?.split('.')[0] || bookFromUrl;
+        const chapterIdFromUrl = searchParams.get('chapter');
+        const bookIdFromUrl = chapterIdFromUrl?.split('.')[0] || searchParams.get('book');
         if (bookIdFromUrl && booksResponse.some(b => b.id === bookIdFromUrl)) {
             setSelectedBook(bookIdFromUrl);
         }
@@ -136,7 +138,7 @@ function BibleReaderContent() {
       setIsLoading(p => ({ ...p, books: false }));
     }
     fetchInitialData();
-  }, [version, chapterFromUrl, bookFromUrl]);
+  }, [version, searchParams]);
 
   useEffect(() => {
     if (selectedBook) {
@@ -147,7 +149,7 @@ function BibleReaderContent() {
   useEffect(() => {
     if (selectedChapter) {
         fetchChapterContent(version, selectedChapter);
-        router.push(`/read?chapter=${selectedChapter}`, { scroll: false });
+        router.replace(`/read?chapter=${selectedChapter}`);
     }
   }, [selectedChapter, version, fetchChapterContent, router]);
 
@@ -155,7 +157,7 @@ function BibleReaderContent() {
     setSelectedBook(bookId);
     setSelectedChapter(null);
     setChapterContent(null);
-    router.push(`/read?book=${bookId}`, { scroll: false });
+    router.push(`/read?book=${bookId}`);
   };
 
   const handleChapterChange = (chapterId: string) => {
@@ -179,8 +181,9 @@ function BibleReaderContent() {
 
   const handleDefine = async () => {
     if (!selection) return;
-    setIsLoading(p => ({ ...p, dictionary: true }));
+    setIsLoading(p => ({ ...p, dictionary: true, concordance: true }));
     setDictionaryResult(null);
+    setConcordanceResult(null);
     setIsDictionaryOpen(true);
     setSelectionRect(null);
 
@@ -193,13 +196,23 @@ function BibleReaderContent() {
             context = parentElement?.textContent || '';
         }
 
-        const result = await defineTerm({ term: selection, context });
-        setDictionaryResult(result);
+        // Fetch definition and concordance in parallel
+        const [definitionResult, concordanceData] = await Promise.all([
+          defineTerm({ term: selection, context }),
+          findConcordance({ term: selection, context })
+        ]);
+
+        setDictionaryResult(definitionResult);
+        setIsLoading(p => ({ ...p, dictionary: false }));
+
+        setConcordanceResult(concordanceData);
+        setIsLoading(p => ({ ...p, concordance: false }));
+
     } catch (e) {
         console.error(e);
         setDictionaryResult({term: selection, definition: "No se pudo obtener la definición. Inténtalo de nuevo."});
-    } finally {
-        setIsLoading(p => ({ ...p, dictionary: false }));
+        setConcordanceResult({verses: []});
+        setIsLoading(p => ({ ...p, dictionary: false, concordance: false }));
     }
   };
 
@@ -302,27 +315,58 @@ function BibleReaderContent() {
             )}
             
             <Dialog open={isDictionaryOpen} onOpenChange={setIsDictionaryOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-md md:max-w-2xl max-h-[90vh]">
                      <DialogHeader>
-                        <DialogTitle className="font-headline text-2xl">Diccionario Bíblico</DialogTitle>
+                        <DialogTitle className="font-headline text-2xl">Diccionario y Concordancia</DialogTitle>
                         <DialogDescription>
-                            Definición de <span className="font-bold">{dictionaryResult?.term}</span>
+                            Definición y versículos relacionados para <span className="font-bold">{dictionaryResult?.term}</span>
                         </DialogDescription>
                     </DialogHeader>
-                    {isLoading.dictionary ? (
-                         <div className="flex justify-center items-center h-32">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                         </div>
-                    ) : (
-                        <div className="space-y-4 pt-4 text-base">
-                            <p>{dictionaryResult?.definition}</p>
-                            {dictionaryResult?.reference && (
-                                 <blockquote className="mt-6 border-l-2 pl-6 italic">
-                                    {dictionaryResult.reference}
-                                 </blockquote>
-                            )}
+                    <ScrollArea className="pr-4 -mr-4">
+                      <div className="space-y-6 py-4">
+                        <div>
+                          <h3 className="text-lg font-headline font-bold mb-2">Definición</h3>
+                          {isLoading.dictionary ? (
+                              <div className="flex justify-center items-center h-24">
+                                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                              </div>
+                          ) : (
+                              <div className="space-y-2 text-base">
+                                  <p>{dictionaryResult?.definition}</p>
+                                  {dictionaryResult?.reference && (
+                                      <blockquote className="mt-4 border-l-2 pl-4 italic">
+                                          {dictionaryResult.reference}
+                                      </blockquote>
+                                  )}
+                              </div>
+                          )}
                         </div>
-                    )}
+
+                        <Separator />
+
+                        <div>
+                          <h3 className="text-lg font-headline font-bold mb-2">Concordancia</h3>
+                          {isLoading.concordance ? (
+                              <div className="flex justify-center items-center h-48">
+                                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                              </div>
+                          ) : (
+                            concordanceResult && concordanceResult.verses.length > 0 ? (
+                              <div className="space-y-4">
+                                {concordanceResult.verses.map((verse, index) => (
+                                  <div key={index}>
+                                    <h4 className="font-bold font-headline">{verse.reference}</h4>
+                                    <p className="text-muted-foreground">{verse.text}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground italic">No se encontraron concordancias.</p>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    </ScrollArea>
                 </DialogContent>
             </Dialog>
 
@@ -351,6 +395,8 @@ function BibleReaderContent() {
 
 export function BibleReader() {
   return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
       <BibleReaderContent />
+    </Suspense>
   )
 }
