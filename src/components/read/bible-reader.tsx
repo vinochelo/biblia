@@ -4,8 +4,8 @@
 import { getBooks, getChapters, getChapter } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { Book, ChapterSummary, Chapter } from "@/lib/types";
-import { Loader2, Terminal, BookOpen, Search } from "lucide-react";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { Loader2, Terminal, BookOpen } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { trackApiCall } from "@/lib/utils";
@@ -32,10 +32,11 @@ import {
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 
-export function BibleReader() {
+function BibleReaderContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const chapterFromUrl = searchParams.get('chapter');
+  const bookFromUrl = searchParams.get('book');
 
   const [version, setVersion] = useState<string>(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
   const [books, setBooks] = useState<Book[]>([]);
@@ -129,17 +130,15 @@ export function BibleReader() {
         setBooks([]);
       } else {
         setBooks(booksResponse);
-        if (chapterFromUrl) {
-            const bookIdFromUrl = chapterFromUrl.split('.')[0];
-            if (booksResponse.some(b => b.id === bookIdFromUrl)) {
-                setSelectedBook(bookIdFromUrl);
-            }
+        const bookIdFromUrl = chapterFromUrl?.split('.')[0] || bookFromUrl;
+        if (bookIdFromUrl && booksResponse.some(b => b.id === bookIdFromUrl)) {
+            setSelectedBook(bookIdFromUrl);
         }
       }
       setIsLoading(p => ({ ...p, books: false }));
     }
     fetchInitialData();
-  }, [version, chapterFromUrl]);
+  }, [version, chapterFromUrl, bookFromUrl]);
 
   useEffect(() => {
     if (selectedBook) {
@@ -349,6 +348,14 @@ export function BibleReader() {
         </div>
     </div>
   );
+}
+
+export function BibleReader() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <BibleReaderContent />
+    </Suspense>
+  )
 }
 
     

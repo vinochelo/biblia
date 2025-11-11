@@ -1,4 +1,6 @@
 import { BibleReader } from "@/components/read/bible-reader";
+import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
 
 export default function ReadPage() {
   return (
@@ -15,3 +17,5 @@ export default function ReadPage() {
     </div>
   );
 }
+
+    
