@@ -1,6 +1,4 @@
 import { VerseComparison } from "@/components/compare/verse-comparison";
-import { Suspense } from "react";
-import { Loader2 } from "lucide-react";
 
 export default function ComparePage() {
   return (
@@ -12,9 +10,7 @@ export default function ComparePage() {
                 Busca un versículo y compáralo en diferentes traducciones de la Biblia.
             </p>
         </div>
-        <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
-            <VerseComparison />
-        </Suspense>
+        <VerseComparison />
       </div>
     </div>
   );
