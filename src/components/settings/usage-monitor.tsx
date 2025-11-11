@@ -2,28 +2,63 @@
 
 import { Progress } from "@/components/ui/progress";
 import { useState, useEffect } from 'react';
+import { Button } from "../ui/button";
+import { RefreshCw } from "lucide-react";
 
-const MOCK_USAGE_DATA = {
-  starter: {
-    used: 1234,
-    limit: 5000,
-  },
-  pro: {
-    used: 87654,
-    limit: 150000,
-  },
-};
+const API_USAGE_COUNT_KEY = "api-usage-count";
+const API_USAGE_RESET_DATE_KEY = "api-usage-reset-date";
+
+const USAGE_LIMIT = 5000;
+
+const getCurrentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth()}`;
+}
 
 export function UsageMonitor() {
-  const [usage, setUsage] = useState({ used: 0, limit: 5000, percentage: 0 });
+  const [usage, setUsage] = useState({ used: 0, limit: USAGE_LIMIT, percentage: 0 });
 
   useEffect(() => {
-    // Esto es un dato simulado. En una aplicación real, obtendrías estos datos de tu API.
-    const plan = 'starter'; 
-    const data = MOCK_USAGE_DATA[plan];
-    const percentage = (data.used / data.limit) * 100;
-    setUsage({ ...data, percentage });
+    const checkAndResetCount = () => {
+        const currentMonthKey = getCurrentMonthKey();
+        const lastResetMonth = localStorage.getItem(API_USAGE_RESET_DATE_KEY);
+
+        if(currentMonthKey !== lastResetMonth) {
+            localStorage.setItem(API_USAGE_COUNT_KEY, "0");
+            localStorage.setItem(API_USAGE_RESET_DATE_KEY, currentMonthKey);
+        }
+    }
+
+    const loadUsage = () => {
+        checkAndResetCount();
+        const storedUsage = localStorage.getItem(API_USAGE_COUNT_KEY);
+        const used = storedUsage ? parseInt(storedUsage, 10) : 0;
+        const percentage = (used / USAGE_LIMIT) * 100;
+        setUsage({ used, limit: USAGE_LIMIT, percentage });
+    };
+
+    loadUsage();
+
+    // Listen for storage changes from other tabs
+    const handleStorageChange = (event: StorageEvent) => {
+        if (event.key === API_USAGE_COUNT_KEY) {
+            loadUsage();
+        }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+        window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
+  
+  const resetCount = () => {
+    localStorage.setItem(API_USAGE_COUNT_KEY, "0");
+    const currentMonthKey = getCurrentMonthKey();
+    localStorage.setItem(API_USAGE_RESET_DATE_KEY, currentMonthKey);
+    setUsage({ used: 0, limit: USAGE_LIMIT, percentage: 0 });
+  }
 
   return (
     <div className="space-y-4">
@@ -36,9 +71,15 @@ export function UsageMonitor() {
         </div>
         <Progress value={usage.percentage} aria-label={`${Math.round(usage.percentage)}% usado`} />
       </div>
-      <p className="text-xs text-muted-foreground">
-        El uso de tu API se reinicia al comienzo de cada ciclo de facturación mensual.
-      </p>
+      <div className="flex justify-between items-center">
+        <p className="text-xs text-muted-foreground">
+          El contador se reinicia automáticamente cada mes.
+        </p>
+        <Button variant="outline" size="sm" onClick={resetCount}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Reiniciar
+        </Button>
+      </div>
     </div>
   );
 }

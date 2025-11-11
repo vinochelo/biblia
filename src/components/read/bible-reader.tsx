@@ -8,6 +8,7 @@ import { Loader2, Terminal, BookOpen, Search } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
+import { trackApiCall } from "@/lib/utils";
 
 import {
   Select,
@@ -88,6 +89,7 @@ export function BibleReader() {
     
     router.replace(`/read?chapter=${chapterId}`, { scroll: false });
 
+    trackApiCall();
     const response = await getChapter(versionId, chapterId, key);
     if ("error" in response) {
       setError(response.error);
@@ -102,6 +104,7 @@ export function BibleReader() {
     setError(null);
     setChapters([]);
     
+    trackApiCall();
     const response = await getChapters(versionId, bookId, key);
     if ("error" in response) {
       setError(response.error);
@@ -127,6 +130,7 @@ export function BibleReader() {
     setIsLoading(p => ({ ...p, books: true }));
     
     async function fetchInitialData() {
+      trackApiCall();
       const booksResponse = await getBooks(version, apiKey!);
       if ("error" in booksResponse) {
         setError(booksResponse.error);

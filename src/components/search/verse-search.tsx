@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { SearchResults } from "./search-results";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
+import { trackApiCall } from "@/lib/utils";
 
 export function VerseSearch() {
   const [version, setVersion] = useState(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
@@ -55,7 +56,8 @@ export function VerseSearch() {
     setError(null);
     setHasSearched(true);
     setResults(null);
-
+    
+    trackApiCall();
     const response = await searchVerses(query, version, apiKey);
     if ("error" in response) {
       setError(response.error);

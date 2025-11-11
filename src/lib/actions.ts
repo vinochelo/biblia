@@ -4,11 +4,18 @@ import type { SearchResult, Book, ChapterSummary, Chapter, Verse } from '@/lib/t
 
 const API_BASE_URL = 'https://rest.api.bible';
 
+const trackApiCall = () => {
+  // This is a server action, it cannot directly modify client-side localStorage.
+  // The client will be responsible for tracking its own API calls.
+  // We can, however, log this server-side if needed.
+};
+
 export async function searchVerses(
   query: string,
   versionId: string,
   apiKey: string
 ): Promise<SearchResult | { error: string }> {
+  trackApiCall();
   if (!apiKey) {
     return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
   }
@@ -64,6 +71,7 @@ export async function searchVerses(
 }
 
 async function apiCall<T>(path: string, apiKey: string, params?: Record<string, string>): Promise<T | { error: string }> {
+  trackApiCall();
   if (!apiKey) {
     return { error: 'Clave API no configurada. Por favor, ve a la página de configuración.' };
   }

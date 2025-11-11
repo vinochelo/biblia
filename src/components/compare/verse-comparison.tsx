@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Search, Terminal } from "lucide-react";
 import { ScrollArea } from "../ui/scroll-area";
+import { trackApiCall } from "@/lib/utils";
 
 export function VerseComparison() {
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export function VerseComparison() {
      if (!apiKey) return null;
      // Use a common version to find the verse ID
      const searchVersion = bibleVersions[0].id;
+     trackApiCall(); // For the search
      const response = await searchVerses(searchQuery, searchVersion, apiKey);
      if ("error" in response) {
          setError(response.error);
@@ -96,6 +98,7 @@ export function VerseComparison() {
     const results = await Promise.all(
       selectedVersions.map(async (versionId) => {
         const version = bibleVersions.find((v) => v.id === versionId)!;
+        trackApiCall(); // For each version compared
         const verse = await getVerse(versionId, foundVerseId, apiKey);
         return { version, verse };
       })
