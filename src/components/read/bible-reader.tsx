@@ -33,6 +33,8 @@ import { ScrollArea } from "../ui/scroll-area";
 import Link from "next/link";
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
+const LAST_BOOK_STORAGE_KEY = "last-book-id";
+const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
 
 function BibleReaderContent() {
   const searchParams = useSearchParams();
@@ -107,8 +109,17 @@ function BibleReaderContent() {
     } else {
       setChapters(response);
       const chapterIdFromUrl = searchParams.get('chapter');
-      if (chapterIdFromUrl && chapterIdFromUrl.startsWith(bookId) && response.some(c => c.id === chapterIdFromUrl)) {
-           setSelectedChapter(chapterIdFromUrl);
+      const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
+      
+      let chapterToSelect = null;
+      if (chapterIdFromUrl && chapterIdFromUrl.startsWith(bookId)) {
+          chapterToSelect = chapterIdFromUrl;
+      } else if (lastChapter && lastChapter.startsWith(bookId)) {
+          chapterToSelect = lastChapter;
+      }
+
+      if (chapterToSelect && response.some(c => c.id === chapterToSelect)) {
+           setSelectedChapter(chapterToSelect);
       } else {
           setSelectedChapter(null);
           setChapterContent(null);
@@ -131,8 +142,12 @@ function BibleReaderContent() {
         setBooks(booksResponse);
         const chapterIdFromUrl = searchParams.get('chapter');
         const bookIdFromUrl = chapterIdFromUrl?.split('.')[0] || searchParams.get('book');
-        if (bookIdFromUrl && booksResponse.some(b => b.id === bookIdFromUrl)) {
-            setSelectedBook(bookIdFromUrl);
+        const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
+        
+        let bookToSelect = bookIdFromUrl || lastBook;
+
+        if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
+            setSelectedBook(bookToSelect);
         }
       }
       setIsLoading(p => ({ ...p, books: false }));
@@ -157,11 +172,14 @@ function BibleReaderContent() {
     setSelectedBook(bookId);
     setSelectedChapter(null);
     setChapterContent(null);
+    localStorage.setItem(LAST_BOOK_STORAGE_KEY, bookId);
+    localStorage.removeItem(LAST_CHAPTER_STORAGE_KEY);
     router.push(`/read?book=${bookId}`);
   };
 
   const handleChapterChange = (chapterId: string) => {
     setSelectedChapter(chapterId);
+    localStorage.setItem(LAST_CHAPTER_STORAGE_KEY, chapterId);
   };
   
   const handleSelection = () => {

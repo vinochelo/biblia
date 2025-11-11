@@ -57,13 +57,23 @@ function VerseComparisonContent() {
   const [error, setError] = useState<string | null>(null);
 
    useEffect(() => {
+    const bookFromUrl = searchParams.get('book');
+    const chapterFromUrl = searchParams.get('chapter');
     const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
     const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
 
-    if (lastBook) setSelectedBook(lastBook);
-    if (lastChapter) setSelectedChapter(lastChapter);
+    if (bookFromUrl) {
+      setSelectedBook(bookFromUrl);
+    } else if (lastBook) {
+      setSelectedBook(lastBook);
+    }
     
-  }, []);
+    if (chapterFromUrl) {
+      setSelectedChapter(chapterFromUrl);
+    } else if (lastChapter && lastBook && chapterFromUrl?.startsWith(lastBook)) {
+      setSelectedChapter(lastChapter);
+    }
+  }, [searchParams]);
 
   const fetchBooks = useCallback(async () => {
     setIsLoading(p => ({ ...p, books: true }));
@@ -75,17 +85,17 @@ function VerseComparisonContent() {
         setBooks([]);
     } else {
         setBooks(booksResponse);
-        const bookFromUrl = searchParams.get('book');
-        const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
-        
-        if (bookFromUrl && booksResponse.some(b => b.id === bookFromUrl)) {
-            setSelectedBook(bookFromUrl);
-        } else if (lastBook && booksResponse.some(b => b.id === lastBook)) {
-            setSelectedBook(lastBook);
+        if (!selectedBook && booksResponse.length > 0) {
+            const bookFromUrl = searchParams.get('book');
+            const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
+            const bookToSelect = bookFromUrl || lastBook;
+            if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
+                setSelectedBook(bookToSelect);
+            }
         }
     }
     setIsLoading(p => ({ ...p, books: false }));
-  }, [searchParams]);
+  }, [searchParams, selectedBook]);
 
   const fetchChapterList = useCallback(async (bookId: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
@@ -99,11 +109,10 @@ function VerseComparisonContent() {
       setChapters(response);
       const chapterFromUrl = searchParams.get('chapter');
       const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
+      const chapterToSelect = chapterFromUrl || lastChapter;
 
-      if(chapterFromUrl && response.some(c => c.id === chapterFromUrl)) {
-          setSelectedChapter(chapterFromUrl);
-      } else if (lastChapter && response.some(c => c.id === lastChapter)) {
-          setSelectedChapter(lastChapter);
+      if(chapterToSelect && response.some(c => c.id === chapterToSelect)) {
+          setSelectedChapter(chapterToSelect);
       }
     }
     setIsLoading(p => ({ ...p, chapters: false }));
@@ -182,6 +191,7 @@ function VerseComparisonContent() {
       setSelectedBook(bookId);
       setSelectedChapter(null);
       localStorage.setItem(LAST_BOOK_STORAGE_KEY, bookId);
+      localStorage.removeItem(LAST_CHAPTER_STORAGE_KEY);
       router.push(`/compare?book=${bookId}`, { scroll: false });
   }
 
@@ -316,6 +326,8 @@ function VerseComparisonContent() {
 
 export function VerseComparison() {
     return (
+      <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
         <VerseComparisonContent />
+      </Suspense>
     )
 }
