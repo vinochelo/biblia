@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { searchVerses, getVerse, getBooks, getChapters } from "@/lib/actions";
+import { getVerse, getBooks, getChapters } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { Verse, BibleVersion, Book, ChapterSummary } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -34,7 +34,7 @@ export function VerseComparison() {
   const router = useRouter();
 
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [verseQuery, setVerseQuery] = useState("16");
+  const [verseQuery, setVerseQuery] = useState("1");
   const [reference, setReference] = useState<string | null>(null);
   
   const [versions, setVersions] = useState<string[]>([]);
@@ -133,27 +133,6 @@ export function VerseComparison() {
     );
   };
   
-  const findVerseId = async (searchQuery: string, versionId: string): Promise<string | null> => {
-     if (!apiKey) return null;
-     trackApiCall();
-     const response = await searchVerses(searchQuery, versionId, apiKey);
-     if ("error" in response) {
-         setError(response.error);
-         return null;
-     }
-     if (response.verses.length > 0) {
-        const exactMatch = response.verses.find(v => v.reference.toLowerCase() === searchQuery.toLowerCase());
-        if (exactMatch) {
-            setReference(exactMatch.reference);
-            return exactMatch.id;
-        }
-        setReference(response.verses[0].reference);
-        return response.verses[0].id;
-     }
-     setError("No se encontró el versículo. Intenta con una referencia más específica.");
-     return null;
-  }
-
   const handleCompare = async (event?: React.FormEvent<HTMLFormElement>) => {
     if (event) event.preventDefault();
     if (!apiKey) {
@@ -173,30 +152,37 @@ export function VerseComparison() {
     setError(null);
     setComparisonResults([]);
 
+    const verseId = `${selectedChapter}.${verseQuery}`;
     const chapterInfo = chapters.find(c => c.id === selectedChapter);
-    const fullQuery = `${chapterInfo?.reference.split(' ')[0]} ${chapterInfo?.number}:${verseQuery}`;
+    const bookInfo = books.find(b => b.id === selectedBook);
     
-    // Find the verse ID using the first selected version (or a default)
-    const searchVersionId = versions[0];
-    const foundVerseId = await findVerseId(fullQuery, searchVersionId);
-    
-    if (!foundVerseId) {
-        setIsLoading(p => ({ ...p, content: false }));
-        return;
+    if (bookInfo && chapterInfo) {
+        setReference(`${bookInfo.name} ${chapterInfo.number}:${verseQuery}`);
     }
-    
-    const verseIdSuffix = foundVerseId.split('.').pop();
-    
+
     const results = await Promise.all(
       selectedVersions.map(async (versionId) => {
         const version = bibleVersions.find((v) => v.id === versionId)!;
         trackApiCall();
-        // Construct verseId for other versions to avoid multiple searches
-        const currentVerseId = `${selectedChapter}.${verseIdSuffix}`;
-        const verse = await getVerse(versionId, currentVerseId, apiKey);
+        const verse = await getVerse(versionId, verseId, apiKey);
+        if ("error" in verse) {
+            // Check if the error is "not found" and provide a friendlier message
+            if (typeof verse.error === 'string' && verse.error.toLowerCase().includes('not found')) {
+                return { version, verse: { error: `No se encontró en ${version.abbreviation}.` } };
+            }
+        }
         return { version, verse };
       })
     );
+
+    const firstSuccess = results.find(r => !("error" in r.verse));
+    if (!firstSuccess) {
+        setError("No se encontró el versículo en ninguna de las versiones seleccionadas. Verifica el número de versículo.");
+    } else {
+        if (!reference && !("error" in firstSuccess.verse)) {
+            setReference(firstSuccess.verse.reference);
+        }
+    }
     
     setComparisonResults(results);
     setIsLoading(p => ({ ...p, content: false }));
@@ -250,7 +236,7 @@ export function VerseComparison() {
                             id="verse-query"
                             name="query"
                             type="number"
-                            placeholder="Ej: 16"
+                            placeholder="Ej: 1"
                             className="h-11 text-base"
                             value={verseQuery}
                             onChange={(e) => setVerseQuery(e.target.value)}
@@ -304,7 +290,7 @@ export function VerseComparison() {
               </Alert>
             )}
             
-            {!isLoading.content && !error && comparisonResults.length > 0 && (
+            {!isLoading.content && comparisonResults.length > 0 && (
                 <div className="space-y-6">
                     <h2 className="text-3xl font-bold font-headline text-center">{reference}</h2>
                     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -326,7 +312,7 @@ export function VerseComparison() {
                     </div>
                 </div>
             )}
-            {!isLoading.content && !error && comparisonResults.length === 0 && (
+            {!isLoading.content && !error && comparisonResults.length === 0 && !isLoading.books && (
                 <div className="text-center py-20 border-2 border-dashed rounded-lg mt-4">
                     <p className="text-muted-foreground">Los resultados de la comparación aparecerán aquí.</p>
                 </div>
@@ -337,6 +323,5 @@ export function VerseComparison() {
     </div>
   );
 }
-
 
     
