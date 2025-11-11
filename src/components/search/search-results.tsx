@@ -3,6 +3,9 @@ import type { SearchResult } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { bibleVersions } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { Button } from "../ui/button";
+import { BookText } from "lucide-react";
 
 interface SearchResultsProps {
   results: SearchResult;
@@ -10,6 +13,14 @@ interface SearchResultsProps {
 
 export function SearchResults({ results }: SearchResultsProps) {
   const version = bibleVersions.find(v => v.id === results.bibleId);
+
+  const getChapterIdFromVerseId = (verseId: string) => {
+    const parts = verseId.split('.');
+    if (parts.length >= 2) {
+      return `${parts[0]}.${parts[1]}`;
+    }
+    return verseId; // Fallback, though should not happen
+  };
 
   return (
     <div className="space-y-6">
@@ -23,8 +34,14 @@ export function SearchResults({ results }: SearchResultsProps) {
       <div className="space-y-4">
         {results.verses.map((verse) => (
           <Card key={verse.id}>
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="font-headline text-xl">{verse.reference}</CardTitle>
+               <Button asChild variant="outline" size="sm">
+                <Link href={`/read?chapter=${getChapterIdFromVerseId(verse.id)}`}>
+                  <BookText className="mr-2 h-4 w-4" />
+                  Leer capítulo
+                </Link>
+              </Button>
             </CardHeader>
             <CardContent>
               <div 
