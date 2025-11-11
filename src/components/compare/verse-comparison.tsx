@@ -1,9 +1,10 @@
+
 "use client";
 
-import { useState, useEffect } from "react";
-import { searchVerses, getVerse } from "@/lib/actions";
+import { useState, useEffect, useCallback } from "react";
+import { searchVerses, getVerse, getBooks, getChapters } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
-import type { Verse, BibleVersion } from "@/lib/types";
+import type { Verse, BibleVersion, Book, ChapterSummary } from "@/lib/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,12 +14,35 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Search, Terminal } from "lucide-react";
 import { ScrollArea } from "../ui/scroll-area";
 import { trackApiCall } from "@/lib/utils";
+import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+
+const BIBLE_VERSION_STORAGE_KEY_COMPARE = "bible-version-id-compare";
+const LAST_BOOK_STORAGE_KEY = "last-book-id";
+const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
+
 
 export function VerseComparison() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [query, setQuery] = useState("Juan 3:16");
-  const [verseId, setVerseId] = useState<string | null>(null);
+  const [verseQuery, setVerseQuery] = useState("16");
   const [reference, setReference] = useState<string | null>(null);
+  
+  const [versions, setVersions] = useState<string[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [selectedBook, setSelectedBook] = useState<string | null>(null);
+  const [chapters, setChapters] = useState<ChapterSummary[]>([]);
+  const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
+
   const [selectedVersions, setSelectedVersions] = useState<string[]>([
     "592420522e16049f-01", // RV1909
     "6b7f504f1b6050c1-01", // NBV
@@ -28,13 +52,78 @@ export function VerseComparison() {
     { version: BibleVersion; verse: Verse | { error: string } }[]
   >([]);
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState({
+    books: false,
+    chapters: false,
+    content: false,
+  });
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+   useEffect(() => {
     const key = localStorage.getItem("bible-api-key") || "hHfw2xKKsVSS1wuy9nGe7";
     setApiKey(key);
+    
+    const savedCompareVersion = localStorage.getItem(BIBLE_VERSION_STORAGE_KEY_COMPARE);
+     if (savedCompareVersion && bibleVersions.some(v => v.id === savedCompareVersion)) {
+        setVersions([savedCompareVersion]);
+    } else {
+        setVersions([bibleVersions[0].id]);
+    }
+
+    const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
+    const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
+
+    if (lastBook) setSelectedBook(lastBook);
+    if (lastChapter) setSelectedChapter(lastChapter);
+    
   }, []);
+
+  const fetchBooks = useCallback(async (versionId: string, key: string) => {
+    setIsLoading(p => ({ ...p, books: true }));
+    trackApiCall();
+    const booksResponse = await getBooks(versionId, key);
+    if ("error" in booksResponse) {
+        setError(booksResponse.error);
+        setBooks([]);
+    } else {
+        setBooks(booksResponse);
+        const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
+        if (lastBook && booksResponse.some(b => b.id === lastBook)) {
+            setSelectedBook(lastBook);
+        }
+    }
+    setIsLoading(p => ({ ...p, books: false }));
+  }, []);
+
+  const fetchChapterList = useCallback(async (versionId: string, bookId: string, key: string) => {
+    setIsLoading(p => ({ ...p, chapters: true }));
+    setChapters([]);
+    trackApiCall();
+    const response = await getChapters(versionId, bookId, key);
+    if ("error" in response) {
+      setError(response.error);
+    } else {
+      setChapters(response);
+      const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
+      if(lastChapter && response.some(c => c.id === lastChapter)) {
+          setSelectedChapter(lastChapter);
+      }
+    }
+    setIsLoading(p => ({ ...p, chapters: false }));
+  }, []);
+  
+  useEffect(() => {
+      if (apiKey && versions.length > 0) {
+        fetchBooks(versions[0], apiKey);
+      }
+  }, [apiKey, versions, fetchBooks]);
+
+  useEffect(() => {
+      if (selectedBook && apiKey && versions.length > 0) {
+        fetchChapterList(versions[0], selectedBook, apiKey);
+      }
+  }, [selectedBook, apiKey, versions, fetchChapterList]);
+
 
   const handleVersionToggle = (versionId: string) => {
     setSelectedVersions((prev) =>
@@ -44,28 +133,24 @@ export function VerseComparison() {
     );
   };
   
-  const findVerseId = async (searchQuery: string): Promise<string | null> => {
+  const findVerseId = async (searchQuery: string, versionId: string): Promise<string | null> => {
      if (!apiKey) return null;
-     // Use a common version to find the verse ID
-     const searchVersion = bibleVersions[0].id;
-     trackApiCall(); // For the search
-     const response = await searchVerses(searchQuery, searchVersion, apiKey);
+     trackApiCall();
+     const response = await searchVerses(searchQuery, versionId, apiKey);
      if ("error" in response) {
          setError(response.error);
          return null;
      }
      if (response.verses.length > 0) {
-        // Find the verse that is an exact match for the query
         const exactMatch = response.verses.find(v => v.reference.toLowerCase() === searchQuery.toLowerCase());
         if (exactMatch) {
             setReference(exactMatch.reference);
             return exactMatch.id;
         }
-        // Fallback to the first result
         setReference(response.verses[0].reference);
         return response.verses[0].id;
      }
-     setError("No se encontró el versículo. Intenta con una referencia más específica (ej. 'Juan 3:16').");
+     setError("No se encontró el versículo. Intenta con una referencia más específica.");
      return null;
   }
 
@@ -75,8 +160,8 @@ export function VerseComparison() {
       setError("Por favor, configura tu clave API en la página de configuración.");
       return;
     }
-    if (!query) {
-      setError("Por favor, introduce una referencia de versículo.");
+    if (!selectedBook || !selectedChapter || !verseQuery) {
+      setError("Por favor, selecciona libro, capítulo y número de versículo.");
       return;
     }
     if (selectedVersions.length === 0) {
@@ -84,57 +169,96 @@ export function VerseComparison() {
       return;
     }
 
-    setIsLoading(true);
+    setIsLoading(p => ({ ...p, content: true }));
     setError(null);
     setComparisonResults([]);
 
-    const foundVerseId = await findVerseId(query);
+    const chapterInfo = chapters.find(c => c.id === selectedChapter);
+    const fullQuery = `${chapterInfo?.reference.split(' ')[0]} ${chapterInfo?.number}:${verseQuery}`;
+    
+    // Find the verse ID using the first selected version (or a default)
+    const searchVersionId = versions[0];
+    const foundVerseId = await findVerseId(fullQuery, searchVersionId);
+    
     if (!foundVerseId) {
-        setIsLoading(false);
+        setIsLoading(p => ({ ...p, content: false }));
         return;
     }
-    setVerseId(foundVerseId);
-
+    
+    const verseIdSuffix = foundVerseId.split('.').pop();
+    
     const results = await Promise.all(
       selectedVersions.map(async (versionId) => {
         const version = bibleVersions.find((v) => v.id === versionId)!;
-        trackApiCall(); // For each version compared
-        const verse = await getVerse(versionId, foundVerseId, apiKey);
+        trackApiCall();
+        // Construct verseId for other versions to avoid multiple searches
+        const currentVerseId = `${selectedChapter}.${verseIdSuffix}`;
+        const verse = await getVerse(versionId, currentVerseId, apiKey);
         return { version, verse };
       })
     );
     
     setComparisonResults(results);
-    setIsLoading(false);
+    setIsLoading(p => ({ ...p, content: false }));
   };
-  
-   useEffect(() => {
-    handleCompare();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
+  const handleBookChange = (bookId: string) => {
+      setSelectedBook(bookId);
+      setSelectedChapter(null);
+      localStorage.setItem(LAST_BOOK_STORAGE_KEY, bookId);
+      router.push(`/compare?book=${bookId}`, { scroll: false });
+  }
+
+  const handleChapterChange = (chapterId: string) => {
+      setSelectedChapter(chapterId);
+      localStorage.setItem(LAST_CHAPTER_STORAGE_KEY, chapterId);
+      const bookId = chapterId.split('.')[0];
+      router.push(`/compare?book=${bookId}&chapter=${chapterId}`, { scroll: false });
+  }
+  
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
         <div className="md:col-span-1 space-y-6">
             <form onSubmit={handleCompare} className="space-y-4">
                 <div className="space-y-2">
-                    <Label htmlFor="verse-query" className="font-bold">Referencia del Versículo</Label>
+                    <Label htmlFor="book-select" className="font-bold">Libro</Label>
+                    <Select value={selectedBook ?? ""} onValueChange={handleBookChange} disabled={isLoading.books || books.length === 0}>
+                        <SelectTrigger id="book-select">
+                            <SelectValue placeholder={isLoading.books ? "Cargando..." : "Seleccionar libro"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {books.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="chapter-select" className="font-bold">Capítulo</Label>
+                    <Select value={selectedChapter ?? ""} onValueChange={handleChapterChange} disabled={isLoading.chapters || chapters.length === 0}>
+                        <SelectTrigger id="chapter-select">
+                            <SelectValue placeholder={isLoading.chapters ? "Cargando..." : "Seleccionar capítulo"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {chapters.map((c) => <SelectItem key={c.id} value={c.id}>{c.number}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="verse-query" className="font-bold">Versículo</Label>
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                             id="verse-query"
                             name="query"
-                            type="search"
-                            placeholder="Ej: Juan 3:16"
-                            className="pl-10 h-11 text-base"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
+                            type="number"
+                            placeholder="Ej: 16"
+                            className="h-11 text-base"
+                            value={verseQuery}
+                            onChange={(e) => setVerseQuery(e.target.value)}
                         />
                     </div>
                 </div>
-                <Button type="submit" className="w-full h-11" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                <Button type="submit" className="w-full h-11" disabled={isLoading.content}>
+                    {isLoading.content ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                     Comparar
                 </Button>
             </form>
@@ -167,7 +291,7 @@ export function VerseComparison() {
 
         <div className="md:col-span-3">
           <div className="min-h-[400px]">
-            {isLoading && (
+            {isLoading.content && (
               <div className="flex justify-center items-center h-full pt-20">
                 <Loader2 className="h-10 w-10 animate-spin text-primary" />
               </div>
@@ -180,9 +304,9 @@ export function VerseComparison() {
               </Alert>
             )}
             
-            {!isLoading && !error && comparisonResults.length > 0 && (
+            {!isLoading.content && !error && comparisonResults.length > 0 && (
                 <div className="space-y-6">
-                    <h2 className="text-3xl font-bold font-headline text-center">{reference || query}</h2>
+                    <h2 className="text-3xl font-bold font-headline text-center">{reference}</h2>
                     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                         {comparisonResults.map(({ version, verse }) => (
                             <Card key={version.id}>
@@ -202,7 +326,7 @@ export function VerseComparison() {
                     </div>
                 </div>
             )}
-            {!isLoading && !error && comparisonResults.length === 0 && (
+            {!isLoading.content && !error && comparisonResults.length === 0 && (
                 <div className="text-center py-20 border-2 border-dashed rounded-lg mt-4">
                     <p className="text-muted-foreground">Los resultados de la comparación aparecerán aquí.</p>
                 </div>
@@ -213,3 +337,6 @@ export function VerseComparison() {
     </div>
   );
 }
+
+
+    
