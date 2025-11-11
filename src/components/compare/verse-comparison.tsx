@@ -26,6 +26,7 @@ import {
 
 const LAST_BOOK_STORAGE_KEY = "last-book-id";
 const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
+const LAST_VERSIONS_STORAGE_KEY = "last-comparison-versions";
 const DEFAULT_VERSION_FOR_STRUCTURE = "592420522e16049f-01"; // RV1909 for books/chapters list
 
 function VerseComparisonContent() {
@@ -74,6 +75,25 @@ function VerseComparisonContent() {
       setSelectedChapter(lastChapter);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const savedVersions = localStorage.getItem(LAST_VERSIONS_STORAGE_KEY);
+    if (savedVersions) {
+        try {
+            const parsedVersions = JSON.parse(savedVersions);
+            if (Array.isArray(parsedVersions) && parsedVersions.length > 0) {
+                setSelectedVersions(parsedVersions);
+            }
+        } catch (e) {
+            // Ignore potential parsing errors
+        }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(LAST_VERSIONS_STORAGE_KEY, JSON.stringify(selectedVersions));
+  }, [selectedVersions]);
+
 
   const fetchBooks = useCallback(async () => {
     setIsLoading(p => ({ ...p, books: true }));
@@ -331,3 +351,5 @@ export function VerseComparison() {
       </Suspense>
     )
 }
+
+    
