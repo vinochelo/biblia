@@ -24,9 +24,9 @@ import {
 } from "@/components/ui/select";
 
 
-const BIBLE_VERSION_STORAGE_KEY_COMPARE = "bible-version-id-compare";
 const LAST_BOOK_STORAGE_KEY = "last-book-id";
 const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
+const DEFAULT_VERSION_FOR_STRUCTURE = "592420522e16049f-01"; // RV1909 for books/chapters list
 
 
 export function VerseComparison() {
@@ -36,7 +36,6 @@ export function VerseComparison() {
   const [verseQuery, setVerseQuery] = useState("1");
   const [reference, setReference] = useState<string | null>(null);
   
-  const [versions, setVersions] = useState<string[]>([]);
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
@@ -59,13 +58,6 @@ export function VerseComparison() {
   const [error, setError] = useState<string | null>(null);
 
    useEffect(() => {
-    const savedCompareVersion = localStorage.getItem(BIBLE_VERSION_STORAGE_KEY_COMPARE);
-     if (savedCompareVersion && bibleVersions.some(v => v.id === savedCompareVersion)) {
-        setVersions([savedCompareVersion]);
-    } else {
-        setVersions([bibleVersions[0].id]);
-    }
-
     const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
     const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
 
@@ -74,10 +66,11 @@ export function VerseComparison() {
     
   }, []);
 
-  const fetchBooks = useCallback(async (versionId: string) => {
+  const fetchBooks = useCallback(async () => {
     setIsLoading(p => ({ ...p, books: true }));
+    setError(null);
     trackApiCall();
-    const booksResponse = await getBooks(versionId);
+    const booksResponse = await getBooks(DEFAULT_VERSION_FOR_STRUCTURE);
     if ("error" in booksResponse) {
         setError(booksResponse.error);
         setBooks([]);
@@ -86,16 +79,22 @@ export function VerseComparison() {
         const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
         if (lastBook && booksResponse.some(b => b.id === lastBook)) {
             setSelectedBook(lastBook);
+        } else if (booksResponse.length > 0) {
+            const bookFromUrl = searchParams.get('book');
+            if (bookFromUrl && booksResponse.some(b => b.id === bookFromUrl)) {
+                setSelectedBook(bookFromUrl);
+            }
         }
     }
     setIsLoading(p => ({ ...p, books: false }));
-  }, []);
+  }, [searchParams]);
 
-  const fetchChapterList = useCallback(async (versionId: string, bookId: string) => {
+  const fetchChapterList = useCallback(async (bookId: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
+    setError(null);
     setChapters([]);
     trackApiCall();
-    const response = await getChapters(versionId, bookId);
+    const response = await getChapters(DEFAULT_VERSION_FOR_STRUCTURE, bookId);
     if ("error" in response) {
       setError(response.error);
     } else {
@@ -103,22 +102,25 @@ export function VerseComparison() {
       const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
       if(lastChapter && response.some(c => c.id === lastChapter)) {
           setSelectedChapter(lastChapter);
+      } else {
+          const chapterFromUrl = searchParams.get('chapter');
+          if (chapterFromUrl && response.some(c => c.id === chapterFromUrl)) {
+                setSelectedChapter(chapterFromUrl);
+          }
       }
     }
     setIsLoading(p => ({ ...p, chapters: false }));
-  }, []);
+  }, [searchParams]);
   
   useEffect(() => {
-      if (versions.length > 0) {
-        fetchBooks(versions[0]);
-      }
-  }, [versions, fetchBooks]);
+    fetchBooks();
+  }, [fetchBooks]);
 
   useEffect(() => {
-      if (selectedBook && versions.length > 0) {
-        fetchChapterList(versions[0], selectedBook);
+      if (selectedBook) {
+        fetchChapterList(selectedBook);
       }
-  }, [selectedBook, versions, fetchChapterList]);
+  }, [selectedBook, fetchChapterList]);
 
 
   const handleVersionToggle = (versionId: string) => {
@@ -154,11 +156,10 @@ export function VerseComparison() {
 
     const results = await Promise.all(
       selectedVersions.map(async (versionId) => {
-        const version = bibleVersions.find((v) => v.id === versionId)!;
         trackApiCall();
+        const version = bibleVersions.find((v) => v.id === versionId)!;
         const verse = await getVerse(versionId, verseId);
         if ("error" in verse) {
-            // Check if the error is "not found" and provide a friendlier message
             if (typeof verse.error === 'string' && verse.error.toLowerCase().includes('not found')) {
                 return { version, verse: { error: `No se encontró en ${version.abbreviation}.` } };
             }
@@ -177,7 +178,7 @@ export function VerseComparison() {
     }
     
     setComparisonResults(results);
-setIsLoading(p => ({ ...p, content: false }));
+    setIsLoading(p => ({ ...p, content: false }));
   };
 
   const handleBookChange = (bookId: string) => {
@@ -190,7 +191,7 @@ setIsLoading(p => ({ ...p, content: false }));
   const handleChapterChange = (chapterId: string) => {
       setSelectedChapter(chapterId);
       localStorage.setItem(LAST_CHAPTER_STORAGE_KEY, chapterId);
-      const bookId = chapterId.split('.')[0];
+      const bookId = selectedBook;
       router.push(`/compare?book=${bookId}&chapter=${chapterId}`, { scroll: false });
   }
   
