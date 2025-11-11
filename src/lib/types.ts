@@ -1,3 +1,4 @@
+
 export type BibleVersion = {
   id: string;
   name: string;
@@ -33,4 +34,11 @@ export type Chapter = {
   number: string;
   reference: string;
   content: string;
+};
+
+export type AudioChapter = {
+    id: string;
+    number: string;
+    reference: string;
+    path: string;
 };

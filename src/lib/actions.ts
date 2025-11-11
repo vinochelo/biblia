@@ -1,6 +1,7 @@
+
 "use server";
 
-import type { SearchResult, Book, ChapterSummary, Chapter, Verse } from '@/lib/types';
+import type { SearchResult, Book, ChapterSummary, Chapter, Verse, AudioChapter } from '@/lib/types';
 
 const API_BASE_URL = 'https://rest.api.bible';
 
@@ -122,4 +123,12 @@ export async function getVerse(versionId: string, verseId: string): Promise<Vers
     reference: result.reference,
     text: result.content,
   };
+}
+
+export async function getAudioChapters(versionId: string, bookId: string): Promise<ChapterSummary[] | { error: string }> {
+    return apiCall<ChapterSummary[]>(`/v1/bibles/${versionId}/books/${bookId}/chapters`);
+}
+
+export async function getAudioChapter(versionId: string, chapterId: string): Promise<AudioChapter | { error: string }> {
+    return apiCall<AudioChapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`);
 }
