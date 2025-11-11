@@ -20,7 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-const AUDIO_BIBLE_ID = "6b7f504f1b6050c1-01"; // Switched to NBV which is more likely to be authorized
+const AUDIO_BIBLE_ID = "6b7f504f1b6050c1-01"; // NBV
 const LAST_AUDIO_BOOK_STORAGE_KEY = "last-audio-book-id";
 const LAST_AUDIO_CHAPTER_STORAGE_KEY = "last-audio-chapter-id";
 
@@ -128,11 +128,14 @@ function AudioBiblePlayerContent() {
   useEffect(() => {
     if (selectedChapter) {
         fetchChapterContent(selectedChapter);
-        router.replace(`/audio?chapter=${selectedChapter}`);
+        // Create a new URLSearchParams object to preserve existing params
+        const newSearchParams = new URLSearchParams(searchParams.toString());
+        newSearchParams.set('chapter', selectedChapter);
+        router.replace(`/audio?${newSearchParams.toString()}`);
     } else {
       setChapterContent(null);
     }
-  }, [selectedChapter, fetchChapterContent, router]);
+  }, [selectedChapter, fetchChapterContent, router, searchParams]);
 
   const handleBookChange = (bookId: string) => {
     setSelectedBook(bookId);
@@ -140,7 +143,10 @@ function AudioBiblePlayerContent() {
     setChapterContent(null);
     localStorage.setItem(LAST_AUDIO_BOOK_STORAGE_KEY, bookId);
     localStorage.removeItem(LAST_AUDIO_CHAPTER_STORAGE_KEY);
-    router.push(`/audio?book=${bookId}`);
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    newSearchParams.delete('chapter');
+    newSearchParams.set('book', bookId);
+    router.push(`/audio?${newSearchParams.toString()}`);
   };
 
   const handleChapterChange = (chapterId: string) => {
@@ -214,7 +220,7 @@ function AudioBiblePlayerContent() {
                 </SelectContent>
             </Select>
 
-            <Select value={selectedChapter ?? ""} onValueChange={handleChapterChange} disabled={isLoading.chapters || chapters.length === 0}>
+            <Select value={selectedChapter ?? ""} onValueChange={handleChapterChange} disabled={isLoading.chapters || chapters.length === 0 || !selectedBook}>
                 <SelectTrigger className="w-full">
                     <SelectValue placeholder={isLoading.chapters ? "Cargando capítulos..." : "Seleccionar capítulo"} />
                 </SelectTrigger>
@@ -237,13 +243,13 @@ function AudioBiblePlayerContent() {
                 </Alert>
             )}
 
-            {(isLoading.books || isLoading.content) && !error && (
+            {(isLoading.books || isLoading.chapters || isLoading.content) && !error && (
                 <div className="flex justify-center items-center h-full pt-10">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
             )}
             
-            {!isLoading.content && chapterContent && (
+            {!isLoading.content && !error && chapterContent && (
                 <Card className="w-full">
                     <CardHeader className="text-center">
                         <CardTitle className="font-headline text-2xl">{chapterContent.reference}</CardTitle>
@@ -286,15 +292,9 @@ function AudioBiblePlayerContent() {
                 </Card>
             )}
 
-            {!selectedBook && !error && !isLoading.books && (
+            {!isLoading.books && !isLoading.chapters && !chapterContent && !error && (
                  <div className="text-center py-10 border-2 border-dashed rounded-lg mt-4 w-full">
-                    <p className="text-muted-foreground">Selecciona un libro para ver los capítulos.</p>
-                </div>
-            )}
-
-            {selectedBook && !selectedChapter && !isLoading.chapters && !isLoading.content && !error &&(
-                 <div className="text-center py-10 border-2 border-dashed rounded-lg mt-4 w-full">
-                    <p className="text-muted-foreground">Selecciona un capítulo para comenzar a escuchar.</p>
+                    <p className="text-muted-foreground">Selecciona un libro y un capítulo para comenzar a escuchar.</p>
                 </div>
             )}
         </div>
@@ -309,3 +309,5 @@ export function AudioBiblePlayer() {
     </Suspense>
   )
 }
+
+    
