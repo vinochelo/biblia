@@ -83,7 +83,6 @@ const BIBLE_VERSION_FOR_READING = '592420522e16049f-01'; // RV1909
 async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
     try {
         const passagePromises = passages.map(async (p) => {
-            trackApiCall(); // Track each chapter fetch
             const chapterId = getChapterIdFromPassage(p);
             if (!chapterId) return `No se pudo encontrar el capítulo para ${p}.`;
 
