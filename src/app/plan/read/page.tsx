@@ -1,13 +1,13 @@
 
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from 'next/navigation';
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { Loader2, BookOpen, Speaker } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { textToSpeech } from "@/ai/flows/tts-flow";
+import { textToSpeech, type TTSOutput } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { trackApiCall } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +21,6 @@ function DailyReadingPageContent() {
     const [textContent, setTextContent] = useState<string | null>(null);
     const [isTextLoading, setIsTextLoading] = useState(true);
     const [isAudioLoading, setIsAudioLoading] = useState(false);
-    const [audioSrc, setAudioSrc] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -58,30 +57,30 @@ function DailyReadingPageContent() {
         fetchContent();
     }, [reading]);
 
-    const handleAudioGeneration = async (text: string) => {
+    const handleAudioGeneration = useCallback(async (text: string): Promise<TTSOutput | null> => {
+        if (!text) return null;
         setIsAudioLoading(true);
+        setError(null);
         try {
             const result = await textToSpeech({ text });
             if (result?.audio) {
-                trackApiCall();
-                setAudioSrc(result.audio);
+                return result;
             } else {
                 setError("No se pudo generar el audio.");
+                return null;
             }
         } catch (e: any) {
-            setError(e.message || 'Error generando audio.');
+            const errorMessage = e.message || 'Error generando audio.';
+            if (typeof errorMessage === 'string' && errorMessage.includes('429')) {
+                setError("Se ha excedido el límite de solicitudes de audio. Por favor, inténtalo de nuevo en un minuto.");
+            } else {
+                 setError(errorMessage);
+            }
+            return null;
         } finally {
             setIsAudioLoading(false);
         }
-    };
-    
-    useEffect(() => {
-        if (textContent && !audioSrc) {
-            handleAudioGeneration(textContent);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [textContent]);
-
+    }, []);
 
     const monthName = month ? new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(2024, parseInt(month)-1, 1)) : '';
 
@@ -120,11 +119,13 @@ function DailyReadingPageContent() {
                          <CardHeader>
                             <CardTitle className="flex items-center gap-4">
                                 <AudioPlayer
-                                    audioSrc={audioSrc}
+                                    text={textContent}
+                                    fetcher={handleAudioGeneration}
+                                    onPlay={() => trackApiCall()}
                                     isLoading={isAudioLoading}
-                                    autoPlay={true}
+                                    autoPlay={false}
                                 />
-                                {isAudioLoading ? "Generando audio..." : "Reproduciendo Lectura"}
+                                {isAudioLoading ? "Generando audio..." : "Escuchar Lectura"}
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -132,7 +133,7 @@ function DailyReadingPageContent() {
                                 {textContent.split('\n').map((paragraph, index) => {
                                     if (paragraph.trim().length === 0) return null;
                                     // Check if the paragraph is a title (matches a passage reference)
-                                    const isTitle = reading?.passages.some(p => paragraph.trim() === p) ?? false;
+                                    const isTitle = reading?.passages.some(p => paragraph.trim().startsWith(p)) ?? false;
                                      if (isTitle) {
                                         return <h2 key={index} className="text-2xl font-bold font-headline mt-6 mb-4">{paragraph}</h2>
                                     }

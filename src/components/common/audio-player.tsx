@@ -11,95 +11,93 @@ interface AudioPlayerProps {
   fetcher?: (text: string) => Promise<TTSOutput | null>;
   onPlay?: () => void;
   autoPlay?: boolean;
-  audioSrc: string | null;
   isLoading: boolean;
 }
 
-export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, audioSrc, isLoading }: AudioPlayerProps) {
+export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isReadyToPlay, setIsReadyToPlay] = useState(false);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
-    if (audioSrc) {
-      const audio = new Audio(audioSrc);
-      audioRef.current = audio;
-      setIsReadyToPlay(true);
-
-      audio.onended = () => setIsPlaying(false);
-      audio.onerror = () => {
-        setError('No se pudo reproducir el audio.');
-        setIsPlaying(false);
-      };
-
-      if (autoPlay) {
-        audio.oncanplaythrough = () => {
-           if (onPlay) onPlay();
-           audio.play().catch(e => {
-            console.error("Error playing audio:", e);
-            setError("El navegador bloqueó la reproducción automática.");
-           });
-           setIsPlaying(true);
-        }
-      }
-    }
-    
+    // Cleanup on unmount
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioSrc, autoPlay]);
+  }, []);
 
+  const setupAudio = (src: string) => {
+    const audio = new Audio(src);
+    audioRef.current = audio;
+    setIsReadyToPlay(true);
+    setAudioSrc(src);
+
+    audio.onended = () => setIsPlaying(false);
+    audio.onerror = () => {
+      setError('No se pudo reproducir el audio.');
+      setIsPlaying(false);
+    };
+
+    if (autoPlay) {
+        handlePlayPause();
+    }
+  }
 
   const handlePlayPause = async () => {
-    if (!audioRef.current) {
-       if (text && fetcher) {
-          // This path is for manual play when audioSrc is not pre-loaded
-          setError(null);
-          try {
-            const result = await fetcher(text);
-            if (result && result.audio) {
-              const audio = new Audio(result.audio);
-              audioRef.current = audio;
-              if (onPlay) onPlay();
-              audio.play();
-              setIsPlaying(true);
-              audio.onended = () => setIsPlaying(false);
-            } else {
-              setError('No se pudo generar el audio.');
-            }
-          } catch (e: any) {
-            setError(e.message || 'Ocurrió un error desconocido.');
-          }
-       }
-       return;
+    if (isLoading || isGenerating) return;
+
+    // If audio is already loaded and ready
+    if (audioRef.current && isReadyToPlay) {
+        if (isPlaying) {
+            audioRef.current.pause();
+            setIsPlaying(false);
+        } else {
+            audioRef.current.play().catch(e => {
+                 console.error("Error playing audio:", e);
+                 setError("El navegador bloqueó la reproducción automática.");
+                 setIsPlaying(false);
+            });
+            setIsPlaying(true);
+        }
+        return;
     }
 
-    if (isPlaying) {
-      audioRef.current?.pause();
-      setIsPlaying(false);
-    } else {
-      if (onPlay) onPlay();
-      audioRef.current?.play();
-      setIsPlaying(true);
+    // If we need to generate the audio first
+    if (text && fetcher && !audioSrc) {
+       setIsGenerating(true);
+       setError(null);
+       try {
+         const result = await fetcher(text);
+         if (result && result.audio) {
+           if (onPlay) onPlay();
+           setupAudio(result.audio);
+           // After setup, play it
+           const newAudio = new Audio(result.audio);
+           newAudio.play();
+           setIsPlaying(true);
+           newAudio.onended = () => setIsPlaying(false);
+           audioRef.current = newAudio;
+           setAudioSrc(result.audio);
+           setIsReadyToPlay(true);
+         } else if (!error) {
+           setError('No se pudo generar el audio.');
+         }
+       } catch (e: any) {
+         setError(e.message || 'Ocurrió un error desconocido.');
+       } finally {
+         setIsGenerating(false);
+       }
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-    };
-  }, []);
-
-
   let icon = <Play className="h-5 w-5" />;
-  if (isLoading) {
+  if (isLoading || isGenerating) {
     icon = <Loader2 className="h-5 w-5 animate-spin" />;
   } else if (isPlaying) {
     icon = <Pause className="h-5 w-5" />;
@@ -110,7 +108,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, audioSrc,
 
   return (
     <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isLoading || (!isReadyToPlay && !text)}>
+        <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isLoading || isGenerating || !text}>
             {icon}
         </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}
