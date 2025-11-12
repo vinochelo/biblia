@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { Header } from '@/components/layout/header';
+import { Analytics } from '@vercel/analytics/react';
 
 export const metadata: Metadata = {
   title: 'Explorador de Versículos',
@@ -24,6 +25,7 @@ export default function RootLayout({
         <Header />
         <main className="flex-1">{children}</main>
         <Toaster />
+        <Analytics />
       </body>
     </html>
   );
