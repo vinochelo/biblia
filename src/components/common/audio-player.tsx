@@ -29,6 +29,12 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     }
   }, [text]);
 
+  const handlePlay = useCallback(() => {
+    if (onPlay) {
+      onPlay();
+    }
+  }, [onPlay]);
+
   const handlePlayPause = useCallback(async () => {
     if (isParentLoading) return;
 
@@ -52,13 +58,12 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
        try {
          const result = await fetcher(text); // fetcher now handles loading state and errors
          if (result && result.audio) {
-           if (onPlay) onPlay();
-           
            setAudioSrc(result.audio); // Cache the audio source
            
            const newAudio = new Audio(result.audio);
            audioRef.current = newAudio;
 
+           newAudio.onplay = handlePlay; // Call onPlay only when audio actually starts playing
            newAudio.onended = () => setIsPlaying(false);
            newAudio.onerror = () => {
               console.error('Error playing generated audio.');
@@ -73,7 +78,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
          console.error("Fetcher failed:", e);
        }
     }
-  }, [isParentLoading, audioSrc, isPlaying, text, fetcher, onPlay]);
+  }, [isParentLoading, audioSrc, isPlaying, text, fetcher, handlePlay]);
 
 
   const getIcon = () => {
