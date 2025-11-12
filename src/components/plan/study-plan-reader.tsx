@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight, CheckCircle2, Circle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { getChapter } from "@/lib/actions";
 import { textToSpeech } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "../common/audio-player";
 import { trackApiCall } from "@/lib/utils";
@@ -78,36 +77,11 @@ const useStudyProgress = () => {
     return { completed, toggleComplete, isCompleted };
 };
 
-const BIBLE_VERSION_FOR_READING = '592420522e16049f-01'; // RV1909
-
 async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
     try {
-        const passagePromises = passages.map(async (p) => {
-            const chapterId = getChapterIdFromPassage(p);
-            if (!chapterId) return `No se pudo encontrar el capítulo para ${p}.`;
-
-            const chapterData = await getChapter(BIBLE_VERSION_FOR_READING, chapterId);
-            if ('error' in chapterData) {
-                return `Error al cargar ${p}: ${chapterData.error}`;
-            }
-
-            const cleanText = chapterData.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-            
-            // Extract specific verses if specified, otherwise return full chapter
-            const verseMatch = p.match(/:(\d+(-\d+)?)/);
-            if (verseMatch) {
-                return `${p}.\n${cleanText}`; // Simplified for now, just returning the whole chapter text
-            }
-            
-            return `${p}.\n${cleanText}`;
-        });
-
-        const resolvedPassages = await Promise.all(passagePromises);
-        const fullText = resolvedPassages.join('\n\n');
-        
+        const fullText = passages.join(', ');
         const ttsResponse = await textToSpeech({ text: fullText });
         return ttsResponse.audio;
-
     } catch (e) {
         console.error("Error fetching or converting passages:", e);
         return null;
@@ -148,7 +122,6 @@ export function StudyPlanReader() {
   const progressPercentage = (completedReadings / totalReadings) * 100;
   
   const handleAudioPlay = () => {
-    // Track the TTS generation as a single API call
     trackApiCall();
   }
 
