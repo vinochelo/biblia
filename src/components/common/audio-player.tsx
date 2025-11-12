@@ -3,9 +3,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, Play, Pause, AlertCircle } from 'lucide-react';
+import { Loader2, Play, Pause } from 'lucide-react';
 import { type TTSOutput } from '@/ai/flows/tts-flow';
-import { trackAiApiCall } from '@/lib/utils';
 
 interface AudioPlayerProps {
   text?: string | null;
@@ -17,17 +16,13 @@ interface AudioPlayerProps {
 
 export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading: isParentLoading }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Reset state when the text changes
+  // Reset state when the text changes to allow re-fetching for new content
   useEffect(() => {
     setIsPlaying(false);
-    setError(null);
     setAudioSrc(null);
-    setIsGenerating(false);
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
@@ -35,7 +30,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   }, [text]);
 
   const handlePlayPause = useCallback(async () => {
-    if (isParentLoading || isGenerating) return;
+    if (isParentLoading) return;
 
     // If audio is already loaded, just play/pause
     if (audioRef.current && audioSrc) {
@@ -45,7 +40,6 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
         } else {
             audioRef.current.play().catch(e => {
                  console.error("Error playing audio:", e);
-                 setError("El navegador bloqueó la reproducción.");
                  setIsPlaying(false);
             });
             setIsPlaying(true);
@@ -55,12 +49,9 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
     // If audio is not loaded, generate it first
     if (text && fetcher && !audioSrc) {
-       setIsGenerating(true);
-       setError(null);
        try {
-         const result = await fetcher(text);
+         const result = await fetcher(text); // fetcher now handles loading state and errors
          if (result && result.audio) {
-           trackAiApiCall('tts'); // Track AI API call on successful generation
            if (onPlay) onPlay();
            
            setAudioSrc(result.audio); // Cache the audio source
@@ -70,49 +61,34 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
            newAudio.onended = () => setIsPlaying(false);
            newAudio.onerror = () => {
-              setError('No se pudo reproducir el audio.');
+              console.error('Error playing generated audio.');
               setIsPlaying(false);
            };
            
            await newAudio.play();
            setIsPlaying(true);
-
-         } else { 
-           setError('No se pudo generar el audio.');
          }
-       } catch (e: any) {
-         let errorMessage = e.message || 'Ocurrió un error desconocido.';
-          if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('quota'))) {
-            errorMessage = "Se ha excedido el límite de solicitudes de audio. Por favor, inténtalo de nuevo en un minuto.";
-          }
-         setError(errorMessage);
-       } finally {
-         setIsGenerating(false);
+       } catch (e) {
+         // Error is handled by the parent component that provides the fetcher
+         console.error("Fetcher failed:", e);
        }
     }
-  }, [isParentLoading, isGenerating, audioSrc, isPlaying, text, fetcher, onPlay]);
+  }, [isParentLoading, audioSrc, isPlaying, text, fetcher, onPlay]);
 
 
   const getIcon = () => {
-    if (isParentLoading || isGenerating) {
+    if (isParentLoading) {
         return <Loader2 className="h-5 w-5 animate-spin" />;
     }
-    if (isPlaying) {
-        return <Pause className="h-5 w-5" />;
-    }
-    if (error) {
-        return <AlertCircle className="h-5 w-5 text-destructive" />;
-    }
-    return <Play className="h-5 w-5" />;
+    return isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />;
   };
 
 
   return (
     <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || isGenerating || !text}>
+        <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || !text}>
             {getIcon()}
         </Button>
-        {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

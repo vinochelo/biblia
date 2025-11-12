@@ -9,7 +9,7 @@ import { Loader2, BookOpen, Speaker } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { textToSpeech, type TTSOutput } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
-import { trackApiCall } from "@/lib/utils";
+import { trackAiApiCall } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function DailyReadingPageContent() {
@@ -121,7 +121,7 @@ function DailyReadingPageContent() {
                                 <AudioPlayer
                                     text={textContent}
                                     fetcher={handleAudioGeneration}
-                                    onPlay={() => trackApiCall()}
+                                    onPlay={() => trackAiApiCall('tts')}
                                     isLoading={isAudioLoading}
                                     autoPlay={false}
                                 />
