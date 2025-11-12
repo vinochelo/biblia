@@ -6,8 +6,12 @@ import { useState, useEffect } from 'react';
 import { Button } from "../ui/button";
 import { RefreshCw } from "lucide-react";
 
-const AI_API_USAGE_COUNT_KEY = "ai-api-usage-count";
-const AI_API_USAGE_RESET_DATE_KEY = "ai-api-usage-reset-date";
+type AiUsageType = 'tts' | 'dictionary';
+
+const getStorageKeys = (type: AiUsageType) => ({
+  countKey: `ai-api-usage-count-${type}`,
+  resetDateKey: `ai-api-usage-reset-date-${type}`,
+});
 
 const USAGE_LIMIT = 50; // A reasonable monthly limit for free tier audio generation
 
@@ -16,23 +20,24 @@ const getCurrentMonthKey = () => {
     return `${now.getFullYear()}-${now.getMonth()}`;
 }
 
-export function AiUsageMonitor() {
+export function AiUsageMonitor({ type }: { type: AiUsageType }) {
+  const { countKey, resetDateKey } = getStorageKeys(type);
   const [usage, setUsage] = useState({ used: 0, limit: USAGE_LIMIT, percentage: 0 });
 
   useEffect(() => {
     const checkAndResetCount = () => {
         const currentMonthKey = getCurrentMonthKey();
-        const lastResetMonth = localStorage.getItem(AI_API_USAGE_RESET_DATE_KEY);
+        const lastResetMonth = localStorage.getItem(resetDateKey);
 
         if(currentMonthKey !== lastResetMonth) {
-            localStorage.setItem(AI_API_USAGE_COUNT_KEY, "0");
-            localStorage.setItem(AI_API_USAGE_RESET_DATE_KEY, currentMonthKey);
+            localStorage.setItem(countKey, "0");
+            localStorage.setItem(resetDateKey, currentMonthKey);
         }
     }
 
     const loadUsage = () => {
         checkAndResetCount();
-        const storedUsage = localStorage.getItem(AI_API_USAGE_COUNT_KEY);
+        const storedUsage = localStorage.getItem(countKey);
         const used = storedUsage ? parseInt(storedUsage, 10) : 0;
         const percentage = (used / USAGE_LIMIT) * 100;
         setUsage({ used, limit: USAGE_LIMIT, percentage });
@@ -42,7 +47,7 @@ export function AiUsageMonitor() {
 
     // Listen for storage changes from other tabs
     const handleStorageChange = (event: StorageEvent) => {
-        if (event.key === AI_API_USAGE_COUNT_KEY) {
+        if (event.key === countKey) {
             loadUsage();
         }
     };
@@ -52,12 +57,12 @@ export function AiUsageMonitor() {
     return () => {
         window.removeEventListener('storage', handleStorageChange);
     };
-  }, []);
+  }, [countKey, resetDateKey]);
   
   const resetCount = () => {
-    localStorage.setItem(AI_API_USAGE_COUNT_KEY, "0");
+    localStorage.setItem(countKey, "0");
     const currentMonthKey = getCurrentMonthKey();
-    localStorage.setItem(AI_API_USAGE_RESET_DATE_KEY, currentMonthKey);
+    localStorage.setItem(resetDateKey, currentMonthKey);
     setUsage({ used: 0, limit: USAGE_LIMIT, percentage: 0 });
   }
 
@@ -65,7 +70,7 @@ export function AiUsageMonitor() {
     <div className="space-y-4">
       <div>
         <div className="flex justify-between items-baseline mb-1">
-          <p className="text-sm font-medium text-muted-foreground">Solicitudes de IA este mes</p>
+          <p className="text-sm font-medium text-muted-foreground">Solicitudes este mes</p>
           <p className="text-lg font-bold font-mono">
             {usage.used.toLocaleString('es')} / {usage.limit.toLocaleString('es')}
           </p>

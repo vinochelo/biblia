@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
-import { trackApiCall } from "@/lib/utils";
+import { trackApiCall, trackAiApiCall } from "@/lib/utils";
 
 import {
   Select,
@@ -204,6 +204,8 @@ function BibleReaderContent() {
     setConcordanceResult(null);
     setIsDictionaryOpen(true);
     setSelectionRect(null);
+
+    trackAiApiCall('dictionary');
 
     try {
         const sel = window.getSelection();

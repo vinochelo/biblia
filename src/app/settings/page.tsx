@@ -37,13 +37,25 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Uso de la API de IA (Texto a Voz)</CardTitle>
+            <CardTitle>Uso de IA (Texto a Voz)</CardTitle>
             <CardDescription>
-                Seguimiento de tu uso de la API de IA para la generación de audio. Los límites de la capa gratuita son estrictos.
+                Seguimiento del uso de la API de IA para la generación de audio.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <AiUsageMonitor />
+            <AiUsageMonitor type="tts" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Uso de IA (Diccionario/Concordancia)</CardTitle>
+            <CardDescription>
+                Seguimiento del uso de la API de IA para definiciones y concordancias.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AiUsageMonitor type="dictionary" />
           </CardContent>
         </Card>
       </div>

@@ -5,10 +5,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+type AiUsageType = 'tts' | 'dictionary';
+
 const API_USAGE_COUNT_KEY = "api-usage-count";
 const API_USAGE_RESET_DATE_KEY = "api-usage-reset-date";
-const AI_API_USAGE_COUNT_KEY = "ai-api-usage-count";
-const AI_API_USAGE_RESET_DATE_KEY = "ai-api-usage-reset-date";
+
+const getAiStorageKeys = (type: AiUsageType) => ({
+  countKey: `ai-api-usage-count-${type}`,
+  resetDateKey: `ai-api-usage-reset-date-${type}`,
+});
+
 
 const getCurrentMonthKey = () => {
     const now = new Date();
@@ -40,25 +46,26 @@ export function trackApiCall() {
 }
 
 
-export function trackAiApiCall() {
+export function trackAiApiCall(type: AiUsageType) {
   if (typeof window !== 'undefined') {
+    const { countKey, resetDateKey } = getAiStorageKeys(type);
     const currentMonthKey = getCurrentMonthKey();
-    const lastResetMonth = localStorage.getItem(AI_API_USAGE_RESET_DATE_KEY);
+    const lastResetMonth = localStorage.getItem(resetDateKey);
 
     let count = 0;
     if (currentMonthKey === lastResetMonth) {
-        const storedUsage = localStorage.getItem(AI_API_USAGE_COUNT_KEY);
+        const storedUsage = localStorage.getItem(countKey);
         count = storedUsage ? parseInt(storedUsage, 10) : 0;
     } else {
-        localStorage.setItem(AI_API_USAGE_RESET_DATE_KEY, currentMonthKey);
+        localStorage.setItem(resetDateKey, currentMonthKey);
     }
     
     count++;
-    localStorage.setItem(AI_API_USAGE_COUNT_KEY, count.toString());
+    localStorage.setItem(countKey, count.toString());
 
     // Dispatch a storage event to notify other tabs
     window.dispatchEvent(new StorageEvent('storage', {
-      key: AI_API_USAGE_COUNT_KEY,
+      key: countKey,
       newValue: count.toString(),
     }));
   }

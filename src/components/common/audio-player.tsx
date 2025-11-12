@@ -60,7 +60,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
        try {
          const result = await fetcher(text);
          if (result && result.audio) {
-           trackAiApiCall(); // Track AI API call on successful generation
+           trackAiApiCall('tts'); // Track AI API call on successful generation
            if (onPlay) onPlay();
            
            setAudioSrc(result.audio); // Cache the audio source
