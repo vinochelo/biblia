@@ -28,14 +28,7 @@ const bookToId: { [key: string]: string } = {
 };
 
 
-const trackApiCall = () => {
-  // This is a server action, it cannot directly modify client-side localStorage.
-  // The client will be responsible for tracking its own API calls.
-  // We can, however, log this server-side if needed.
-};
-
 async function apiCall<T>(path: string, params?: Record<string, string>): Promise<T | { error: string }> {
-  trackApiCall();
   if (!apiKey) {
     return { error: 'La clave API del servidor no está configurada. El administrador del sitio debe configurarla.' };
   }

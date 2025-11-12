@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
@@ -70,15 +71,13 @@ export function AudioPlayer({ day, month, passages, fetcher, onPlay }: AudioPlay
     }
   };
 
-  let icon = <Volume2 className="h-5 w-5" />;
+  let icon = <Play className="h-5 w-5" />;
   if (isLoading) {
     icon = <Loader2 className="h-5 w-5 animate-spin" />;
   } else if (isPlaying) {
     icon = <Pause className="h-5 w-5" />;
   } else if (error) {
     icon = <AlertCircle className="h-5 w-5 text-destructive" />;
-  } else {
-    icon = <Play className="h-5 w-5" />;
   }
 
 

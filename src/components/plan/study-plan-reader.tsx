@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -80,15 +81,23 @@ const useStudyProgress = () => {
 
 async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
     try {
-        const text = await getPassagesText(passages);
-        if (text && typeof text === 'string') {
-            const ttsResponse = await textToSpeech({ text });
+        passages.forEach(() => trackApiCall()); // Track bible API calls
+        const textResult = await getPassagesText(passages);
+
+        if (typeof textResult === 'object' && textResult.error) {
+             throw new Error(textResult.error);
+        }
+
+        if (textResult && typeof textResult === 'string') {
+            trackApiCall(); // Track TTS API call
+            const ttsResponse = await textToSpeech({ text: textResult });
             return ttsResponse.audio;
         }
         return null;
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error fetching or converting passages:", e);
-        return null;
+        // Re-throw the error to be caught by the AudioPlayer component
+        throw e;
     }
 }
 
@@ -126,10 +135,8 @@ export function StudyPlanReader() {
   const progressPercentage = (completedReadings / totalReadings) * 100;
   
   const handleAudioPlay = () => {
-    // This function is now responsible for tracking all API calls for a single audio generation.
-    // It is triggered once per play button click.
-    // We will count the TTS call here. The Bible API calls are tracked server-side.
-    trackApiCall();
+    // This function is no longer needed to track API calls directly,
+    // as it's handled within the fetcher. But we keep it for the component prop.
   }
 
   return (
