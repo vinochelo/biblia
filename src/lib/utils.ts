@@ -7,6 +7,8 @@ export function cn(...inputs: ClassValue[]) {
 
 const API_USAGE_COUNT_KEY = "api-usage-count";
 const API_USAGE_RESET_DATE_KEY = "api-usage-reset-date";
+const AI_API_USAGE_COUNT_KEY = "ai-api-usage-count";
+const AI_API_USAGE_RESET_DATE_KEY = "ai-api-usage-reset-date";
 
 const getCurrentMonthKey = () => {
     const now = new Date();
@@ -32,6 +34,31 @@ export function trackApiCall() {
     // Dispatch a storage event to notify other tabs
     window.dispatchEvent(new StorageEvent('storage', {
       key: API_USAGE_COUNT_KEY,
+      newValue: count.toString(),
+    }));
+  }
+}
+
+
+export function trackAiApiCall() {
+  if (typeof window !== 'undefined') {
+    const currentMonthKey = getCurrentMonthKey();
+    const lastResetMonth = localStorage.getItem(AI_API_USAGE_RESET_DATE_KEY);
+
+    let count = 0;
+    if (currentMonthKey === lastResetMonth) {
+        const storedUsage = localStorage.getItem(AI_API_USAGE_COUNT_KEY);
+        count = storedUsage ? parseInt(storedUsage, 10) : 0;
+    } else {
+        localStorage.setItem(AI_API_USAGE_RESET_DATE_KEY, currentMonthKey);
+    }
+    
+    count++;
+    localStorage.setItem(AI_API_USAGE_COUNT_KEY, count.toString());
+
+    // Dispatch a storage event to notify other tabs
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: AI_API_USAGE_COUNT_KEY,
       newValue: count.toString(),
     }));
   }

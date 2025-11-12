@@ -1,4 +1,5 @@
 import { UsageMonitor } from '@/components/settings/usage-monitor';
+import { AiUsageMonitor } from '@/components/settings/ai-usage-monitor';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
@@ -10,7 +11,7 @@ export default function SettingsPage() {
         <div className="space-y-2">
             <h1 className="text-3xl font-headline font-bold">Configuración</h1>
             <p className="text-muted-foreground">
-                Monitorea el consumo de la API.
+                Monitorea el consumo de las APIs.
             </p>
         </div>
         
@@ -24,13 +25,25 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Monitoreo de Uso</CardTitle>
+            <CardTitle>Uso de la API de la Biblia</CardTitle>
             <CardDescription>
-                Realiza un seguimiento de tu uso de la API en este navegador para mantenerte dentro de los límites.
+                Seguimiento de tu uso de la API de `rest.api.bible` para obtener textos bíblicos.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <UsageMonitor />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Uso de la API de IA (Texto a Voz)</CardTitle>
+            <CardDescription>
+                Seguimiento de tu uso de la API de IA para la generación de audio. Los límites de la capa gratuita son estrictos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AiUsageMonitor />
           </CardContent>
         </Card>
       </div>

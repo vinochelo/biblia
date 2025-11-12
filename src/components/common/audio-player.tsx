@@ -5,6 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, Play, Pause, AlertCircle } from 'lucide-react';
 import { type TTSOutput } from '@/ai/flows/tts-flow';
+import { trackAiApiCall } from '@/lib/utils';
 
 interface AudioPlayerProps {
   text?: string | null;
@@ -59,7 +60,8 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
        try {
          const result = await fetcher(text);
          if (result && result.audio) {
-           if (onPlay) onPlay(); // Track API call only on successful generation
+           trackAiApiCall(); // Track AI API call on successful generation
+           if (onPlay) onPlay();
            
            setAudioSrc(result.audio); // Cache the audio source
            
@@ -75,16 +77,20 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
            await newAudio.play();
            setIsPlaying(true);
 
-         } else if (!error) { // Ensure we don't overwrite a specific error from the fetcher
+         } else { 
            setError('No se pudo generar el audio.');
          }
        } catch (e: any) {
-         setError(e.message || 'Ocurrió un error desconocido.');
+         let errorMessage = e.message || 'Ocurrió un error desconocido.';
+          if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('quota'))) {
+            errorMessage = "Se ha excedido el límite de solicitudes de audio. Por favor, inténtalo de nuevo en un minuto.";
+          }
+         setError(errorMessage);
        } finally {
          setIsGenerating(false);
        }
     }
-  }, [isParentLoading, isGenerating, audioSrc, isPlaying, text, fetcher, onPlay, error]);
+  }, [isParentLoading, isGenerating, audioSrc, isPlaying, text, fetcher, onPlay]);
 
 
   const getIcon = () => {
