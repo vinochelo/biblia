@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { studyPlan } from "@/lib/study-plan";
 import type { Reading } from "@/lib/study-plan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ArrowRight, CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { textToSpeech } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "../common/audio-player";
 import { trackApiCall } from "@/lib/utils";
+import { getPassagesText } from "@/lib/actions";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -79,9 +80,12 @@ const useStudyProgress = () => {
 
 async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
     try {
-        const fullText = `Por favor, lee en español los siguientes pasajes de la Biblia: ${passages.join(', ')}`;
-        const ttsResponse = await textToSpeech({ text: fullText });
-        return ttsResponse.audio;
+        const text = await getPassagesText(passages);
+        if (text && typeof text === 'string') {
+            const ttsResponse = await textToSpeech({ text });
+            return ttsResponse.audio;
+        }
+        return null;
     } catch (e) {
         console.error("Error fetching or converting passages:", e);
         return null;
@@ -122,6 +126,9 @@ export function StudyPlanReader() {
   const progressPercentage = (completedReadings / totalReadings) * 100;
   
   const handleAudioPlay = () => {
+    // This function is now responsible for tracking all API calls for a single audio generation.
+    // It is triggered once per play button click.
+    // We will count the TTS call here. The Bible API calls are tracked server-side.
     trackApiCall();
   }
 

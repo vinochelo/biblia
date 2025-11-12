@@ -8,6 +8,26 @@ const API_BASE_URL = 'https://rest.api.bible';
 // La clave API ahora se lee de forma segura desde las variables de entorno del servidor.
 const apiKey = process.env.BIBLE_API_KEY;
 
+const BIBLE_VERSION_FOR_TTS = '592420522e16049f-01'; // RV1909 for TTS content fetching
+
+const bookToId: { [key: string]: string } = {
+    "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
+    "Josué": "JOS", "Jueces": "JDG", "Rut": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
+    "1 Reyes": "1KI", "2 Reyes": "2KI", "1 Crónicas": "1CH", "2 Crónicas": "2CH", "Esdras": "EZR",
+    "Nehemías": "NEH", "Ester": "EST", "Job": "JOB", "Salmos": "PSA", "Proverbios": "PRO",
+    "Eclesiastés": "ECC", "Cantares": "SNG", "Isaías": "ISA", "Jeremías": "JER",
+    "Lamentaciones": "LAM", "Ezequiel": "EZK", "Daniel": "DAN", "Oseas": "HOS", "Joel": "JOL",
+    "Amós": "AMO", "Abdías": "OBA", "Jonás": "JON", "Miqueas": "MIC", "Nahum": "NAM",
+    "Habacuc": "HAB", "Sofonías": "ZEP", "Hageo": "HAG", "Zacarías": "ZEC", "Malaquías": "MAL",
+    "Mateo": "MAT", "Marcos": "MRK", "Lucas": "LUK", "Juan": "JHN", "Hechos": "ACT",
+    "Romanos": "ROM", "1 Corintios": "1CO", "2 Corintios": "2CO", "Gálatas": "GAL", "Efesios": "EPH",
+    "Filipenses": "PHP", "Colosenses": "COL", "1 Tesalonicenses": "1TH", "2 Tesalonicenses": "2TH",
+    "1 Timoteo": "1TI", "2 Timoteo": "2TI", "Tito": "TIT", "Filemón": "PHM", "Hebreos": "HEB",
+    "Santiago": "JAS", "1 Pedro": "1PE", "2 Pedro": "2PE", "1 Juan": "1JN", "2 Juan": "2JN",
+    "3 Juan": "3JN", "Judas": "JUD", "Apocalipsis": "REV"
+};
+
+
 const trackApiCall = () => {
   // This is a server action, it cannot directly modify client-side localStorage.
   // The client will be responsible for tracking its own API calls.
@@ -132,4 +152,48 @@ export async function getVerse(versionId: string, verseId: string): Promise<Vers
     reference: result.reference,
     text: result.content,
   };
+}
+
+function parsePassageString(passage: string): string[] {
+    const bookNames = Object.keys(bookToId).sort((a, b) => b.length - a.length);
+    for (const bookName of bookNames) {
+        if (passage.startsWith(bookName)) {
+            const bookId = bookToId[bookName];
+            const remaining = passage.substring(bookName.length).trim();
+            const chapters = remaining.split(',').map(s => s.trim()).filter(Boolean);
+            return chapters.map(ch => `${bookId}.${ch}`);
+        }
+    }
+    return [];
+}
+
+export async function getPassagesText(passages: string[]): Promise<string | { error: string }> {
+    let fullText = "";
+
+    const chapterIdsToFetch: string[] = [];
+    passages.forEach(p => {
+        chapterIdsToFetch.push(...parsePassageString(p));
+    });
+    
+    // Use Promise.all to fetch chapters in parallel
+    const chapterPromises = chapterIdsToFetch.map(id => getChapter(BIBLE_VERSION_FOR_TTS, id));
+    const results = await Promise.all(chapterPromises);
+
+    for (const result of results) {
+        if ('error' in result) {
+            // If any chapter fails, return the error
+            return { error: `No se pudo cargar el texto del capítulo: ${result.error}` };
+        }
+        if (result && result.content) {
+            // Strip HTML tags to get plain text
+            const plainText = result.content.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ');
+            fullText += plainText + " ";
+        }
+    }
+
+    if (!fullText) {
+        return { error: "No se encontró el contenido para los pasajes seleccionados." };
+    }
+
+    return fullText.trim();
 }
