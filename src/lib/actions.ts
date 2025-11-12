@@ -149,41 +149,47 @@ export async function getVerse(versionId: string, verseId: string): Promise<Vers
   };
 }
 
-function parsePassageString(passage: string): string[] {
+function parsePassageString(passage: string): { passageRef: string, chapterIds: string[] } {
     const bookNames = Object.keys(bookToId).sort((a, b) => b.length - a.length);
     for (const bookName of bookNames) {
         if (passage.startsWith(bookName)) {
             const bookId = bookToId[bookName];
             const remaining = passage.substring(bookName.length).trim();
             const chapters = remaining.split(',').map(s => s.trim()).filter(Boolean);
-            return chapters.map(ch => `${bookId}.${ch}`);
+            return {
+                passageRef: passage,
+                chapterIds: chapters.map(ch => `${bookId}.${ch}`)
+            };
         }
     }
-    return [];
+    return { passageRef: passage, chapterIds: [] };
 }
 
 export async function getPassagesText(passages: string[]): Promise<string | { error: string }> {
     let fullText = "";
 
-    const chapterIdsToFetch: string[] = [];
-    passages.forEach(p => {
-        chapterIdsToFetch.push(...parsePassageString(p));
-    });
-    
-    // Use Promise.all to fetch chapters in parallel
-    const chapterPromises = chapterIdsToFetch.map(id => getChapter(BIBLE_VERSION_FOR_TTS, id));
-    const results = await Promise.all(chapterPromises);
+    for (const p of passages) {
+        const { passageRef, chapterIds } = parsePassageString(p);
+        
+        if (chapterIds.length === 0) continue;
 
-    for (const result of results) {
-        if ('error' in result) {
-            // If any chapter fails, return the error
-            return { error: `No se pudo cargar el texto del capítulo: ${result.error}` };
+        fullText += `\n\n${passageRef}\n`;
+
+        const chapterPromises = chapterIds.map(id => getChapter(BIBLE_VERSION_FOR_TTS, id));
+        const results = await Promise.all(chapterPromises);
+
+        let passageContent = "";
+        for (const result of results) {
+            if ('error' in result) {
+                // If any chapter fails, return the error
+                return { error: `No se pudo cargar el texto del capítulo: ${result.error}` };
+            }
+            if (result && result.content) {
+                const plainText = result.content.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim();
+                passageContent += plainText + " ";
+            }
         }
-        if (result && result.content) {
-            const heading = `\n\n${result.reference}\n`;
-            const plainText = result.content.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim();
-            fullText += heading + plainText;
-        }
+         fullText += passageContent.trim();
     }
 
     if (!fullText) {

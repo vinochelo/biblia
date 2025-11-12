@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from 'next/navigation';
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
-import { Loader2, BookOpen } from "lucide-react";
+import { Loader2, BookOpen, Speaker } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { textToSpeech } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
@@ -19,7 +19,9 @@ function DailyReadingPageContent() {
 
     const [reading, setReading] = useState<Reading | null | undefined>(undefined);
     const [textContent, setTextContent] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isTextLoading, setIsTextLoading] = useState(true);
+    const [isAudioLoading, setIsAudioLoading] = useState(false);
+    const [audioSrc, setAudioSrc] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -38,7 +40,7 @@ function DailyReadingPageContent() {
 
         const fetchContent = async () => {
             if (reading) {
-                setIsLoading(true);
+                setIsTextLoading(true);
                 setError(null);
                 const result = await getPassagesText(reading.passages);
                 if (typeof result === 'object' && result.error) {
@@ -46,10 +48,10 @@ function DailyReadingPageContent() {
                 } else if (typeof result === 'string') {
                     setTextContent(result);
                 }
-                setIsLoading(false);
+                setIsTextLoading(false);
             } else {
                 setError("No se encontró la lectura para la fecha especificada.");
-                setIsLoading(false);
+                setIsTextLoading(false);
             }
         };
 
@@ -57,8 +59,29 @@ function DailyReadingPageContent() {
     }, [reading]);
 
     const handleAudioGeneration = async (text: string) => {
-        return await textToSpeech({ text });
+        setIsAudioLoading(true);
+        try {
+            const result = await textToSpeech({ text });
+            if (result?.audio) {
+                trackApiCall();
+                setAudioSrc(result.audio);
+            } else {
+                setError("No se pudo generar el audio.");
+            }
+        } catch (e: any) {
+            setError(e.message || 'Error generando audio.');
+        } finally {
+            setIsAudioLoading(false);
+        }
     };
+    
+    useEffect(() => {
+        if (textContent && !audioSrc) {
+            handleAudioGeneration(textContent);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [textContent]);
+
 
     const monthName = month ? new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(2024, parseInt(month)-1, 1)) : '';
 
@@ -77,7 +100,7 @@ function DailyReadingPageContent() {
                     )}
                 </div>
 
-                {isLoading && (
+                {(isTextLoading) && (
                     <div className="flex justify-center items-center h-64">
                         <Loader2 className="h-12 w-12 animate-spin text-primary" />
                         <p className="ml-4 text-lg text-muted-foreground">Cargando lectura...</p>
@@ -87,30 +110,30 @@ function DailyReadingPageContent() {
                 {error && (
                     <Alert variant="destructive">
                         <BookOpen className="h-4 w-4" />
-                        <AlertTitle>Error al cargar la lectura</AlertTitle>
+                        <AlertTitle>Error</AlertTitle>
                         <AlertDescription>{error}</AlertDescription>
                     </Alert>
                 )}
 
-                {!isLoading && textContent && (
+                {!isTextLoading && textContent && (
                     <Card>
                          <CardHeader>
                             <CardTitle className="flex items-center gap-4">
                                 <AudioPlayer
-                                    text={textContent}
-                                    fetcher={() => handleAudioGeneration(textContent)}
-                                    onPlay={trackApiCall} 
+                                    audioSrc={audioSrc}
+                                    isLoading={isAudioLoading}
                                     autoPlay={true}
                                 />
-                                Reproduciendo Lectura
+                                {isAudioLoading ? "Generando audio..." : "Reproduciendo Lectura"}
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                              <div className="prose prose-lg max-w-none font-body leading-relaxed text-justify">
                                 {textContent.split('\n').map((paragraph, index) => {
                                     if (paragraph.trim().length === 0) return null;
-                                    const isTitle = studyPlan.some(r => r.passages.some(p => paragraph.includes(p)));
-                                    if (isTitle) {
+                                    // Check if the paragraph is a title (matches a passage reference)
+                                    const isTitle = reading?.passages.some(p => paragraph.trim() === p) ?? false;
+                                     if (isTitle) {
                                         return <h2 key={index} className="text-2xl font-bold font-headline mt-6 mb-4">{paragraph}</h2>
                                     }
                                     return <p key={index}>{paragraph}</p>
