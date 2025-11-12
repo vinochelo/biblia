@@ -38,7 +38,7 @@ async function apiCall<T>(path: string, params?: Record<string, string>): Promis
       let errorMessage = errorData?.message || `Error: ${response.status} ${response.statusText}`;
       console.error("API Error:", response.status, errorMessage);
 
-      if (response.status === 401 || (typeof errorMessage === 'string' && (errorMessage.includes('API key') || errorMessage.includes('authorized')))) {
+      if (response.status === 401 || (typeof errorMessage === 'string' && (errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('authorized')))) {
            errorMessage = 'La clave API del servidor no es válida o no tiene permisos para acceder a este recurso. Verifique la clave y los permisos en su cuenta de rest.api.bible.';
       }
       return { error: `Error de la API: ${errorMessage}` };
@@ -103,7 +103,15 @@ export async function getChapter(versionId: string, chapterId: string): Promise<
         'include-verse-numbers': 'true',
         'include-verse-spans': 'false'
     };
-    return apiCall<Chapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`, params);
+    const result = await apiCall<Chapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`, params);
+     if ('error' in result) {
+        return result;
+    }
+    // The API sometimes wraps the content in a weird object, this unwraps it.
+    if (typeof result === 'object' && result !== null && 'content' in result && typeof (result as any).content === 'string') {
+        return result;
+    }
+    return result;
 }
 
 export async function getVerse(versionId: string, verseId: string): Promise<Verse | { error: string }> {

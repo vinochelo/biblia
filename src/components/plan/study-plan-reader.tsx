@@ -5,9 +5,12 @@ import Link from 'next/link';
 import { studyPlan } from "@/lib/study-plan";
 import type { Reading } from "@/lib/study-plan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ArrowRight, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Circle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { getChapter } from "@/lib/actions";
+import { textToSpeech } from "@/ai/flows/tts-flow";
+import { AudioPlayer } from "../common/audio-player";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -74,6 +77,43 @@ const useStudyProgress = () => {
     return { completed, toggleComplete, isCompleted };
 };
 
+const BIBLE_VERSION_FOR_READING = '592420522e16049f-01'; // RV1909
+
+async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
+    try {
+        const passagePromises = passages.map(async (p) => {
+            const chapterId = getChapterIdFromPassage(p);
+            if (!chapterId) return `No se pudo encontrar el capítulo para ${p}.`;
+
+            const chapterData = await getChapter(BIBLE_VERSION_FOR_READING, chapterId);
+            if ('error' in chapterData) {
+                return `Error al cargar ${p}: ${chapterData.error}`;
+            }
+
+            const cleanText = chapterData.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            
+            // Extract specific verses if specified, otherwise return full chapter
+            const verseMatch = p.match(/:(\d+(-\d+)?)/);
+            if (verseMatch) {
+                return `${p}.\n${cleanText}`; // Simplified for now, just returning the whole chapter text
+            }
+            
+            return `${p}.\n${cleanText}`;
+        });
+
+        const resolvedPassages = await Promise.all(passagePromises);
+        const fullText = resolvedPassages.join('\n\n');
+        
+        const ttsResponse = await textToSpeech({ text: fullText });
+        return ttsResponse.audio;
+
+    } catch (e) {
+        console.error("Error fetching or converting passages:", e);
+        return null;
+    }
+}
+
+
 export function StudyPlanReader() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const { completed, toggleComplete, isCompleted } = useStudyProgress();
@@ -130,8 +170,8 @@ export function StudyPlanReader() {
 
       <div className="grid grid-cols-1 gap-4">
         {monthReadings.map(({day, reading}) => (
-            <div key={day} className={`flex items-start gap-4 p-4 rounded-lg border ${isCompleted(currentMonth, day) ? 'bg-muted/50 text-muted-foreground' : 'bg-card'}`}>
-                <div className="flex flex-col items-center">
+            <div key={day} className={`flex items-start gap-4 p-4 rounded-lg border ${isCompleted(currentMonth, day) ? 'bg-muted/50' : 'bg-card'}`}>
+                <div className="flex flex-col items-center justify-start h-full pt-1 space-y-2">
                     <button onClick={() => reading && toggleComplete(currentMonth, day)} disabled={!reading} className="disabled:opacity-50 disabled:cursor-not-allowed">
                         {isCompleted(currentMonth, day) ? (
                             <CheckCircle2 className="h-6 w-6 text-green-500" />
@@ -139,16 +179,17 @@ export function StudyPlanReader() {
                             <Circle className="h-6 w-6 text-muted-foreground/50" />
                         )}
                     </button>
-                    <span className="text-2xl font-bold">{day}</span>
+                    <span className="text-2xl font-bold text-muted-foreground">{day}</span>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 space-y-3">
                     {reading ? (
+                      <>
                         <div className={`grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3`}>
                              {reading.passages.map((passage, index) => {
                                 const chapterId = getChapterIdFromPassage(passage);
                                 const link = chapterId ? `/read?chapter=${chapterId}` : '/read';
                                 return (
-                                    <Link href={link} key={index} className={`block group p-3 rounded-md transition-colors ${isCompleted(currentMonth, day) ? 'hover:bg-muted' : 'hover:bg-secondary'}`}>
+                                    <Link href={link} key={index} className={`block group p-3 rounded-md transition-colors ${isCompleted(currentMonth, day) ? 'text-muted-foreground hover:bg-muted' : 'text-card-foreground hover:bg-secondary'}`}>
                                         <div className="font-semibold font-headline text-lg">{passage}</div>
                                         <div className={`flex items-center text-sm ${isCompleted(currentMonth, day) ? 'text-muted-foreground' : 'text-primary group-hover:font-bold'}`}>
                                             Leer ahora <ArrowRight className="ml-2 h-4 w-4" />
@@ -157,6 +198,13 @@ export function StudyPlanReader() {
                                 );
                             })}
                         </div>
+                        <AudioPlayer 
+                            day={day} 
+                            month={currentMonth}
+                            passages={reading.passages}
+                            fetcher={fetchAndAssemblePassages} 
+                        />
+                      </>
                     ) : (
                         <p className="text-muted-foreground italic mt-1">Día de descanso o lectura libre.</p>
                     )}
