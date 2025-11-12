@@ -53,6 +53,8 @@ async function apiCall<T>(path: string, params?: Record<string, string>): Promis
 
       if (response.status === 401 || (typeof errorMessage === 'string' && (errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('authorized')))) {
            errorMessage = 'La clave API del servidor no es válida o no tiene permisos para acceder a este recurso. Verifique la clave y los permisos en su cuenta de rest.api.bible.';
+      } else if (typeof errorMessage === 'string' && errorMessage.toLowerCase().includes('not found')) {
+          errorMessage = `No se encontró el recurso solicitado. Es posible que el libro, capítulo o versículo no exista en esta versión de la Biblia.`;
       }
       return { error: `Error de la API: ${errorMessage}` };
     }
@@ -178,9 +180,9 @@ export async function getPassagesText(passages: string[]): Promise<string | { er
             return { error: `No se pudo cargar el texto del capítulo: ${result.error}` };
         }
         if (result && result.content) {
-            // Strip HTML tags to get plain text
-            const plainText = result.content.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ');
-            fullText += plainText + " ";
+            const heading = `\n\n${result.reference}\n`;
+            const plainText = result.content.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim();
+            fullText += heading + plainText;
         }
     }
 
