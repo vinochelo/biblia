@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Progress } from "@/components/ui/progress";
@@ -8,6 +9,7 @@ import { RefreshCw } from "lucide-react";
 const API_USAGE_COUNT_KEY = "api-usage-count";
 const API_USAGE_RESET_DATE_KEY = "api-usage-reset-date";
 
+// Corresponds to the "Starter" plan for non-commercial use on api.bible
 const USAGE_LIMIT = 5000;
 
 const getCurrentMonthKey = () => {

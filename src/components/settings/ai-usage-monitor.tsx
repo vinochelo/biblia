@@ -13,7 +13,8 @@ const getStorageKeys = (type: AiUsageType) => ({
   resetDateKey: `ai-api-usage-reset-date-${type}`,
 });
 
-const USAGE_LIMIT = 50; // A reasonable monthly limit for free tier audio generation
+// Based on Gemini free tier, which is often around 15 RPM. A monthly limit is not strictly enforced by the free tier, so this is for general dev tracking.
+const USAGE_LIMIT = 50;
 
 const getCurrentMonthKey = () => {
     const now = new Date();
@@ -79,7 +80,7 @@ export function AiUsageMonitor({ type }: { type: AiUsageType }) {
       </div>
       <div className="flex justify-between items-center">
         <p className="text-xs text-muted-foreground">
-          El contador se reinicia automáticamente cada mes.
+          El contador se reinicia automáticamente cada mes. El límite real de la capa gratuita suele ser por minuto (ej. 15 RPM).
         </p>
         <Button variant="outline" size="sm" onClick={resetCount}>
             <RefreshCw className="mr-2 h-4 w-4" />

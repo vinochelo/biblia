@@ -1,3 +1,4 @@
+
 import { UsageMonitor } from '@/components/settings/usage-monitor';
 import { AiUsageMonitor } from '@/components/settings/ai-usage-monitor';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,17 +10,17 @@ export default function SettingsPage() {
     <div className="container mx-auto px-4 py-8 md:py-12">
       <div className="mx-auto max-w-2xl space-y-8">
         <div className="space-y-2">
-            <h1 className="text-3xl font-headline font-bold">Configuración</h1>
+            <h1 className="text-3xl font-headline font-bold">Configuración y Uso</h1>
             <p className="text-muted-foreground">
-                Monitorea el consumo de las APIs.
+                Monitorea el consumo de las APIs para desarrollo.
             </p>
         </div>
         
         <Alert>
           <Info className="h-4 w-4" />
-          <AlertTitle>Información de la Clave API</AlertTitle>
+          <AlertTitle>Información sobre los Límites</AlertTitle>
           <AlertDescription>
-            La clave API para producción se gestiona de forma segura en el servidor a través de variables de entorno. Ya no es necesario configurarla aquí.
+            La clave API para producción se gestiona de forma segura en el servidor. Los contadores de uso aquí son una herramienta de desarrollo y se basan en los límites conocidos de las capas gratuitas (ej. 15 solicitudes por minuto para la IA de Google o 5,000 al mes para api.bible). Los límites reales pueden variar según tu plan.
           </AlertDescription>
         </Alert>
 
@@ -27,7 +28,7 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>Uso de la API de la Biblia</CardTitle>
             <CardDescription>
-                Seguimiento de tu uso de la API de `rest.api.bible` para obtener textos bíblicos.
+                Seguimiento de tu uso de la API de `rest.api.bible` (Plan Starter: ~5,000/mes).
             </CardDescription>
           </CardHeader>
           <CardContent>
