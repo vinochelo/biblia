@@ -4,10 +4,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, Play, Pause, AlertCircle } from 'lucide-react';
+import { type TTSOutput } from '@/ai/flows/tts-flow';
 
 interface AudioPlayerProps {
   text: string;
-  fetcher: (text: string) => Promise<string | null>;
+  fetcher: (text: string) => Promise<TTSOutput | null>;
   onPlay: () => void;
   autoPlay?: boolean;
 }
@@ -29,6 +30,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false }: AudioPl
     }
 
     if (audioSrc && audioRef.current) {
+      onPlay();
       audioRef.current.play();
       setIsPlaying(true);
       return;
@@ -37,14 +39,18 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false }: AudioPl
     setIsLoading(true);
     setError(null);
     try {
-      onPlay(); 
-      const src = await fetcher(text);
-      if (src) {
-        setAudioSrc(src);
-        const audio = new Audio(src);
+      const result = await fetcher(text);
+      if (result && result.audio) {
+        setAudioSrc(result.audio);
+        const audio = new Audio(result.audio);
         audioRef.current = audio;
-        audio.play();
-        setIsPlaying(true);
+        
+        audio.oncanplaythrough = () => {
+          onPlay(); 
+          audio.play();
+          setIsPlaying(true);
+        };
+
         audio.onended = () => setIsPlaying(false);
         audio.onerror = () => {
           setError('No se pudo reproducir el audio.');
