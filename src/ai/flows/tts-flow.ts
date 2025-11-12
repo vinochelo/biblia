@@ -10,7 +10,7 @@ import { z } from 'zod';
 import wav from 'wav';
 
 const TTSInputSchema = z.object({
-  text: z.string().describe('The text to convert to speech. This will be a list of Bible passages to read, e.g., "Génesis 1, 2, Salmos 1".'),
+  text: z.string().describe('The text to convert to speech.'),
 });
 export type TTSInput = z.infer<typeof TTSInputSchema>;
 
@@ -67,7 +67,7 @@ const ttsFlow = ai.defineFlow(
           },
         },
       },
-      prompt: `Por favor, lee en español los siguientes pasajes de la Biblia: ${input.text}`,
+      prompt: input.text,
     });
 
     if (!media) {

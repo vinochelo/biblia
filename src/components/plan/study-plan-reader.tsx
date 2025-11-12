@@ -79,7 +79,7 @@ const useStudyProgress = () => {
 
 async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
     try {
-        const fullText = passages.join(', ');
+        const fullText = `Por favor, lee en español los siguientes pasajes de la Biblia: ${passages.join(', ')}`;
         const ttsResponse = await textToSpeech({ text: fullText });
         return ttsResponse.audio;
     } catch (e) {
