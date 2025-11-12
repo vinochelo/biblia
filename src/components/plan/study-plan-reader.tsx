@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { getChapter } from "@/lib/actions";
 import { textToSpeech } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "../common/audio-player";
+import { trackApiCall } from "@/lib/utils";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -82,6 +83,7 @@ const BIBLE_VERSION_FOR_READING = '592420522e16049f-01'; // RV1909
 async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
     try {
         const passagePromises = passages.map(async (p) => {
+            trackApiCall(); // Track each chapter fetch
             const chapterId = getChapterIdFromPassage(p);
             if (!chapterId) return `No se pudo encontrar el capítulo para ${p}.`;
 
@@ -145,6 +147,11 @@ export function StudyPlanReader() {
   const totalReadings = studyPlan.length;
   const completedReadings = completed.size;
   const progressPercentage = (completedReadings / totalReadings) * 100;
+  
+  const handleAudioPlay = () => {
+    // Track the TTS generation as a single API call
+    trackApiCall();
+  }
 
   return (
     <div className="space-y-6">
@@ -203,6 +210,7 @@ export function StudyPlanReader() {
                             month={currentMonth}
                             passages={reading.passages}
                             fetcher={fetchAndAssemblePassages} 
+                            onPlay={handleAudioPlay}
                         />
                       </>
                     ) : (

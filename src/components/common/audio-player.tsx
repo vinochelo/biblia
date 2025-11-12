@@ -9,9 +9,10 @@ interface AudioPlayerProps {
   month: number;
   passages: string[];
   fetcher: (passages: string[]) => Promise<string | null>;
+  onPlay: () => void;
 }
 
-export function AudioPlayer({ day, month, passages, fetcher }: AudioPlayerProps) {
+export function AudioPlayer({ day, month, passages, fetcher, onPlay }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +26,8 @@ export function AudioPlayer({ day, month, passages, fetcher }: AudioPlayerProps)
         audioRef.current.pause();
         audioRef.current = null;
       }
+      setIsPlaying(false);
+      setAudioSrc(null);
     };
   }, [day, month]);
 
@@ -44,6 +47,7 @@ export function AudioPlayer({ day, month, passages, fetcher }: AudioPlayerProps)
     setIsLoading(true);
     setError(null);
     try {
+      onPlay(); // Track API call on the client side
       const src = await fetcher(passages);
       if (src) {
         setAudioSrc(src);
