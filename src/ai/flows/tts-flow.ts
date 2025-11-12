@@ -23,15 +23,6 @@ export async function textToSpeech(input: TTSInput): Promise<TTSOutput> {
   return ttsFlow(input);
 }
 
-const prompt = ai.definePrompt({
-    name: 'ttsPrompt',
-    input: {schema: TTSInputSchema},
-    prompt: `You are a narrator for a Bible study app. Your task is to read the specified Bible passages aloud in a clear, engaging, and reverent tone. The user will provide a list of passages. Read them in Spanish.
-
-Passages to read: {{{text}}}`,
-});
-
-
 async function toWav(
   pcmData: Buffer,
   channels = 1,
@@ -66,9 +57,6 @@ const ttsFlow = ai.defineFlow(
     outputSchema: TTSOutputSchema,
   },
   async (input) => {
-    const { output } = await prompt(input);
-    const textToRead = output?.text ?? input.text;
-
     const { media } = await ai.generate({
       model: 'googleai/gemini-2.5-flash-preview-tts',
       config: {
@@ -79,7 +67,7 @@ const ttsFlow = ai.defineFlow(
           },
         },
       },
-      prompt: textToRead,
+      prompt: `Por favor, lee en español los siguientes pasajes de la Biblia: ${input.text}`,
     });
 
     if (!media) {
