@@ -4,15 +4,10 @@
 import { useState, useEffect } from "react";
 import Link from 'next/link';
 import { studyPlan } from "@/lib/study-plan";
-import type { Reading } from "@/lib/study-plan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ArrowRight, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Circle, BookText, Loader2, Speaker } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { textToSpeech } from "@/ai/flows/tts-flow";
-import { AudioPlayer } from "../common/audio-player";
-import { trackApiCall } from "@/lib/utils";
-import { getPassagesText } from "@/lib/actions";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -54,7 +49,14 @@ const useStudyProgress = () => {
     useEffect(() => {
         const savedProgress = localStorage.getItem("study-progress");
         if (savedProgress) {
-            setCompleted(new Set(JSON.parse(savedProgress)));
+            try {
+                const parsed = JSON.parse(savedProgress);
+                if(Array.isArray(parsed)) {
+                    setCompleted(new Set(parsed));
+                }
+            } catch {
+                setCompleted(new Set());
+            }
         }
     }, []);
 
@@ -79,28 +81,6 @@ const useStudyProgress = () => {
     return { completed, toggleComplete, isCompleted };
 };
 
-async function fetchAndAssemblePassages(passages: string[]): Promise<string | null> {
-    try {
-        passages.forEach(() => trackApiCall()); // Track bible API calls
-        const textResult = await getPassagesText(passages);
-
-        if (typeof textResult === 'object' && textResult.error) {
-             throw new Error(textResult.error);
-        }
-
-        if (textResult && typeof textResult === 'string') {
-            trackApiCall(); // Track TTS API call
-            const ttsResponse = await textToSpeech({ text: textResult });
-            return ttsResponse.audio;
-        }
-        return null;
-    } catch (e: any) {
-        console.error("Error fetching or converting passages:", e);
-        // Re-throw the error to be caught by the AudioPlayer component
-        throw e;
-    }
-}
-
 
 export function StudyPlanReader() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -109,7 +89,7 @@ export function StudyPlanReader() {
   const changeMonth = (offset: number) => {
     setCurrentDate(prev => {
       const newDate = new Date(prev);
-      newDate.setDate(1); // Avoid issues with month-end dates
+      newDate.setDate(1); 
       newDate.setMonth(prev.getMonth() + offset);
       return newDate;
     });
@@ -134,11 +114,6 @@ export function StudyPlanReader() {
   const completedReadings = completed.size;
   const progressPercentage = (completedReadings / totalReadings) * 100;
   
-  const handleAudioPlay = () => {
-    // This function is no longer needed to track API calls directly,
-    // as it's handled within the fetcher. But we keep it for the component prop.
-  }
-
   return (
     <div className="space-y-6">
       <Card>
@@ -164,7 +139,7 @@ export function StudyPlanReader() {
       <div className="grid grid-cols-1 gap-4">
         {monthReadings.map(({day, reading}) => (
             <div key={day} className={`flex items-start gap-4 p-4 rounded-lg border ${isCompleted(currentMonth, day) ? 'bg-muted/50' : 'bg-card'}`}>
-                <div className="flex flex-col items-center justify-start h-full pt-1 space-y-2">
+                <div className="flex flex-col items-center justify-center h-full pt-1 space-y-2">
                     <button onClick={() => reading && toggleComplete(currentMonth, day)} disabled={!reading} className="disabled:opacity-50 disabled:cursor-not-allowed">
                         {isCompleted(currentMonth, day) ? (
                             <CheckCircle2 className="h-6 w-6 text-green-500" />
@@ -177,27 +152,28 @@ export function StudyPlanReader() {
                 <div className="flex-1 space-y-3">
                     {reading ? (
                       <>
-                        <div className={`grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3`}>
+                        <div className={`grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`}>
                              {reading.passages.map((passage, index) => {
                                 const chapterId = getChapterIdFromPassage(passage);
                                 const link = chapterId ? `/read?chapter=${chapterId}` : '/read';
                                 return (
-                                    <Link href={link} key={index} className={`block group p-3 rounded-md transition-colors ${isCompleted(currentMonth, day) ? 'text-muted-foreground hover:bg-muted' : 'text-card-foreground hover:bg-secondary'}`}>
-                                        <div className="font-semibold font-headline text-lg">{passage}</div>
-                                        <div className={`flex items-center text-sm ${isCompleted(currentMonth, day) ? 'text-muted-foreground' : 'text-primary group-hover:font-bold'}`}>
-                                            Leer ahora <ArrowRight className="ml-2 h-4 w-4" />
-                                        </div>
-                                    </Link>
+                                    <Button asChild variant="ghost" className="h-auto justify-start" key={index}>
+                                        <Link href={link} className={`block group p-3 rounded-md transition-colors text-left`}>
+                                            <div className="font-semibold font-headline text-lg">{passage}</div>
+                                            <div className={`flex items-center text-sm text-primary`}>
+                                                Leer ahora <BookText className="ml-2 h-4 w-4" />
+                                            </div>
+                                        </Link>
+                                    </Button>
                                 );
                             })}
                         </div>
-                        <AudioPlayer 
-                            day={day} 
-                            month={currentMonth}
-                            passages={reading.passages}
-                            fetcher={fetchAndAssemblePassages} 
-                            onPlay={handleAudioPlay}
-                        />
+                        <Button asChild>
+                            <Link href={`/plan/read?month=${currentMonth}&day=${day}`}>
+                                <Speaker className="mr-2 h-4 w-4" />
+                                Escuchar Lectura
+                            </Link>
+                        </Button>
                       </>
                     ) : (
                         <p className="text-muted-foreground italic mt-1">Día de descanso o lectura libre.</p>
