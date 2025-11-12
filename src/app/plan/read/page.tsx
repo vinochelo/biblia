@@ -57,7 +57,6 @@ function DailyReadingPageContent() {
     }, [reading]);
 
     const handleAudioGeneration = async (text: string) => {
-        trackApiCall(); // For TTS
         return await textToSpeech({ text });
     };
 
@@ -100,7 +99,7 @@ function DailyReadingPageContent() {
                                 <AudioPlayer
                                     text={textContent}
                                     fetcher={() => handleAudioGeneration(textContent)}
-                                    onPlay={() => {}} 
+                                    onPlay={trackApiCall} 
                                     autoPlay={true}
                                 />
                                 Reproduciendo Lectura
@@ -108,9 +107,14 @@ function DailyReadingPageContent() {
                         </CardHeader>
                         <CardContent>
                              <div className="prose prose-lg max-w-none font-body leading-relaxed text-justify">
-                                {textContent.split('\n').map((paragraph, index) => (
-                                    <p key={index}>{paragraph}</p>
-                                ))}
+                                {textContent.split('\n').map((paragraph, index) => {
+                                    if (paragraph.trim().length === 0) return null;
+                                    const isTitle = studyPlan.some(r => r.passages.some(p => paragraph.includes(p)));
+                                    if (isTitle) {
+                                        return <h2 key={index} className="text-2xl font-bold font-headline mt-6 mb-4">{paragraph}</h2>
+                                    }
+                                    return <p key={index}>{paragraph}</p>
+                                })}
                             </div>
                         </CardContent>
                     </Card>
