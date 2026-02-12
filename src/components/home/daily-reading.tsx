@@ -28,6 +28,7 @@ export function DailyReading() {
   });
 
   const [reading, setReading] = useState<Reading | null | undefined>(undefined);
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isTextLoading, setIsTextLoading] = useState(true);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
@@ -56,7 +57,7 @@ export function DailyReading() {
           window.speechSynthesis.cancel();
           setIsBrowserSpeaking(false);
       }
-  }, [textContent, isBrowserTtsSupported]);
+  }, [htmlContent, isBrowserTtsSupported]);
 
   const handleBrowserSpeech = () => {
     if (!isBrowserTtsSupported || !textContent) return;
@@ -96,15 +97,25 @@ export function DailyReading() {
       if (reading) {
         setIsTextLoading(true);
         setError(null);
+        setHtmlContent(null);
         setTextContent(null);
+        
         const result = await getPassagesText(reading.passages, version);
+        
         if (typeof result === 'object' && result.error) {
           setError(result.error);
         } else if (typeof result === 'string') {
-          setTextContent(result);
+          setHtmlContent(result);
+          // Create text version for TTS on the client
+          if (typeof window !== 'undefined') {
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
+            setTextContent(tempDiv.textContent || tempDiv.innerText || "");
+          }
         }
         setIsTextLoading(false);
       } else {
+        setHtmlContent(null);
         setTextContent(null);
         setIsTextLoading(false);
       }
@@ -208,7 +219,7 @@ export function DailyReading() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            {!isTextLoading && textContent && (
+            {!isTextLoading && htmlContent && (
               <div className="space-y-6">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
                     <div className="flex items-center gap-4">
@@ -230,16 +241,10 @@ export function DailyReading() {
                         </div>
                     )}
                 </div>
-                 <div className="prose prose-lg max-w-none font-body leading-relaxed text-justify">
-                    {textContent.split('\n').map((paragraph, index) => {
-                        if (paragraph.trim().length === 0) return null;
-                        const isTitle = reading.passages.some(p => paragraph.trim().startsWith(p)) ?? false;
-                        if (isTitle) {
-                            return <h2 key={index} className="text-2xl font-bold font-headline mt-6 mb-4">{paragraph}</h2>
-                        }
-                        return <p key={index}>{paragraph}</p>
-                    })}
-                </div>
+                 <div 
+                    className="prose prose-lg max-w-none font-body leading-relaxed text-justify [&_h3]:font-headline [&_h3]:font-bold [&_h3]:text-xl [&_h3]:text-center"
+                    dangerouslySetInnerHTML={{ __html: htmlContent }}
+                 />
               </div>
             )}
           </CardContent>

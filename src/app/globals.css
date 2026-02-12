@@ -81,4 +81,11 @@
   body {
     @apply bg-background text-foreground;
   }
+  .prose .v-num {
+    @apply font-sans font-bold text-sm text-muted-foreground pr-2;
+    vertical-align: super;
+    font-size: 0.6em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }

@@ -164,35 +164,24 @@ function parsePassageString(passage: string): { passageRef: string, chapterIds: 
 }
 
 export async function getPassagesText(passages: string[], versionId: string): Promise<string | { error: string }> {
-    let fullText = "";
-
+    let combinedContent = "";
     for (const p of passages) {
-        const { passageRef, chapterIds } = parsePassageString(p);
-        
+        const { chapterIds } = parsePassageString(p);
         if (chapterIds.length === 0) continue;
 
-        fullText += `\n\n${passageRef}\n`;
-
-        const chapterPromises = chapterIds.map(id => getChapter(versionId, id));
-        const results = await Promise.all(chapterPromises);
-
-        let passageContent = "";
-        for (const result of results) {
+        for (const chapterId of chapterIds) {
+            const result = await getChapter(versionId, chapterId);
             if ('error' in result) {
-                // If any chapter fails, return the error
-                return { error: `No se pudo cargar el texto del capítulo: ${result.error}` };
+                return { error: `No se pudo cargar el texto para ${chapterId}: ${result.error}` };
             }
             if (result && result.content) {
-                const plainText = result.content.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim();
-                passageContent += plainText + " ";
+                combinedContent += result.content;
             }
         }
-         fullText += passageContent.trim();
     }
 
-    if (!fullText) {
+    if (!combinedContent) {
         return { error: "No se encontró el contenido para los pasajes seleccionados." };
     }
-
-    return fullText.trim();
+    return combinedContent;
 }

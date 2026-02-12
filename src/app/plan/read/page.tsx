@@ -19,6 +19,7 @@ function DailyReadingPageContent() {
     const BIBLE_VERSION_FOR_TTS = '592420522e16049f-01'; // RV1909
 
     const [reading, setReading] = useState<Reading | null | undefined>(undefined);
+    const [htmlContent, setHtmlContent] = useState<string | null>(null);
     const [textContent, setTextContent] = useState<string | null>(null);
     const [isTextLoading, setIsTextLoading] = useState(true);
     const [isAudioLoading, setIsAudioLoading] = useState(false);
@@ -46,7 +47,12 @@ function DailyReadingPageContent() {
                 if (typeof result === 'object' && result.error) {
                     setError(result.error);
                 } else if (typeof result === 'string') {
-                    setTextContent(result);
+                    setHtmlContent(result);
+                    if (typeof window !== 'undefined') {
+                        const tempDiv = document.createElement("div");
+                        tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
+                        setTextContent(tempDiv.textContent || tempDiv.innerText || "");
+                    }
                 }
                 setIsTextLoading(false);
             } else {
@@ -115,7 +121,7 @@ function DailyReadingPageContent() {
                     </Alert>
                 )}
 
-                {!isTextLoading && textContent && (
+                {!isTextLoading && htmlContent && (
                     <Card>
                          <CardHeader>
                             <CardTitle className="flex items-center gap-4">
@@ -129,17 +135,10 @@ function DailyReadingPageContent() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                             <div className="prose prose-lg max-w-none font-body leading-relaxed text-justify">
-                                {textContent.split('\n').map((paragraph, index) => {
-                                    if (paragraph.trim().length === 0) return null;
-                                    // Check if the paragraph is a title (matches a passage reference)
-                                    const isTitle = reading?.passages.some(p => paragraph.trim().startsWith(p)) ?? false;
-                                     if (isTitle) {
-                                        return <h2 key={index} className="text-2xl font-bold font-headline mt-6 mb-4">{paragraph}</h2>
-                                    }
-                                    return <p key={index}>{paragraph}</p>
-                                })}
-                            </div>
+                             <div 
+                                className="prose prose-lg max-w-none font-body leading-relaxed text-justify [&_h3]:font-headline [&_h3]:font-bold [&_h3]:text-xl [&_h3]:text-center"
+                                dangerouslySetInnerHTML={{ __html: htmlContent || ''}}
+                            />
                         </CardContent>
                     </Card>
                 )}
