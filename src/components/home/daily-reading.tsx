@@ -6,7 +6,7 @@ import Link from "next/link";
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
-import { Loader2, Calendar, AlertCircle, Play, Pause } from "lucide-react";
+import { Loader2, Calendar, AlertCircle, Play, Pause, Settings } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,8 +16,14 @@ import { textToSpeech, type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall } from "@/lib/utils";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
+const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
+const BROWSER_VOICE_RATE_KEY = 'browser-tts-rate';
 
 export function DailyReading() {
   const [version, setVersion] = useState(() => {
@@ -36,20 +42,59 @@ export function DailyReading() {
   const [today, setToday] = useState(new Date());
 
   const { isCompleted, toggleComplete } = useStudyProgress();
+  
   const [isBrowserTtsSupported, setIsBrowserTtsSupported] = useState(false);
   const [isBrowserSpeaking, setIsBrowserSpeaking] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>();
+  const [speechRate, setSpeechRate] = useState(1);
 
   useEffect(() => {
     const isSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
     setIsBrowserTtsSupported(isSupported);
 
-    // Cleanup function to stop speech when component unmounts
-    return () => {
-        if (isSupported && window.speechSynthesis.speaking) {
-            window.speechSynthesis.cancel();
+    const getVoices = () => {
+        if (!isSupported) return;
+        const availableVoices = window.speechSynthesis.getVoices();
+        if (availableVoices.length === 0) return;
+
+        const spanishVoices = availableVoices.filter(voice => voice.lang.startsWith('es'));
+        const defaultVoices = availableVoices.filter(voice => voice.default);
+        setVoices(availableVoices);
+
+        const savedVoiceURI = localStorage.getItem(BROWSER_VOICE_URI_KEY);
+        if (savedVoiceURI && availableVoices.some(v => v.voiceURI === savedVoiceURI)) {
+            setSelectedVoiceURI(savedVoiceURI);
+        } else if (spanishVoices.length > 0) {
+            setSelectedVoiceURI(spanishVoices[0].voiceURI);
+        } else if (defaultVoices.length > 0) {
+            setSelectedVoiceURI(defaultVoices[0].voiceURI);
+        } else if (availableVoices.length > 0){
+            setSelectedVoiceURI(availableVoices[0].voiceURI);
         }
     };
-  }, []);
+    
+    getVoices();
+    if (isSupported) {
+        window.speechSynthesis.onvoiceschanged = getVoices;
+    }
+
+    const savedRate = localStorage.getItem(BROWSER_VOICE_RATE_KEY);
+    if (savedRate) {
+        setSpeechRate(parseFloat(savedRate));
+    }
+
+    // Cleanup function
+    return () => {
+        if (isSupported) {
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+            }
+            window.speechSynthesis.onvoiceschanged = null;
+        }
+    };
+}, [isBrowserTtsSupported]);
+
 
   // Stop speaking if text content changes
   useEffect(() => {
@@ -58,6 +103,18 @@ export function DailyReading() {
           setIsBrowserSpeaking(false);
       }
   }, [htmlContent, isBrowserTtsSupported]);
+  
+  // Save settings to localStorage
+  useEffect(() => {
+    if (selectedVoiceURI) {
+        localStorage.setItem(BROWSER_VOICE_URI_KEY, selectedVoiceURI);
+    }
+  }, [selectedVoiceURI]);
+
+  useEffect(() => {
+    localStorage.setItem(BROWSER_VOICE_RATE_KEY, String(speechRate));
+  }, [speechRate]);
+
 
   const handleBrowserSpeech = () => {
     if (!isBrowserTtsSupported || !textContent) return;
@@ -67,7 +124,16 @@ export function DailyReading() {
         setIsBrowserSpeaking(false);
     } else {
         const utterance = new SpeechSynthesisUtterance(textContent);
-        utterance.lang = 'es-ES';
+        const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
+        
+        if (voice) {
+            utterance.voice = voice;
+            utterance.lang = voice.lang;
+        } else {
+            utterance.lang = 'es-ES';
+        }
+        utterance.rate = speechRate;
+        
         utterance.onstart = () => setIsBrowserSpeaking(true);
         utterance.onend = () => setIsBrowserSpeaking(false);
         utterance.onerror = (e) => {
@@ -151,6 +217,61 @@ export function DailyReading() {
 
   const todayFormatted = today.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
+  const BrowserTtsSettings = (
+    <Popover>
+        <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" disabled={!isBrowserTtsSupported || isAudioLoading}>
+                <Settings className="h-5 w-5" />
+            </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80">
+            <div className="grid gap-4">
+                <div className="space-y-2">
+                    <h4 className="font-medium leading-none">Ajustes de Voz (Navegador)</h4>
+                    <p className="text-sm text-muted-foreground">
+                        Controla la voz y la velocidad de la lectura.
+                    </p>
+                </div>
+                <div className="grid gap-4">
+                     <div className="space-y-2">
+                        <Label htmlFor="voice">Voz</Label>
+                        <Select
+                            value={selectedVoiceURI}
+                            onValueChange={setSelectedVoiceURI}
+                            disabled={voices.length === 0}
+                        >
+                            <SelectTrigger id="voice">
+                                <SelectValue placeholder="Seleccionar voz" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {voices.map(voice => (
+                                    <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                                        {voice.name} ({voice.lang})
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex justify-between">
+                             <Label htmlFor="rate">Velocidad</Label>
+                             <span className="text-xs text-muted-foreground">{speechRate.toFixed(1)}x</span>
+                        </div>
+                        <Slider
+                            id="rate"
+                            min={0.5}
+                            max={2}
+                            step={0.1}
+                            value={[speechRate]}
+                            onValueChange={(value) => setSpeechRate(value[0])}
+                        />
+                    </div>
+                </div>
+            </div>
+        </PopoverContent>
+    </Popover>
+);
+
   return (
     <div className="space-y-8">
       <div className="space-y-2 text-center">
@@ -233,11 +354,12 @@ export function DailyReading() {
                     </div>
 
                     {isBrowserTtsSupported && (
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
                             <Button variant="outline" size="icon" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
                                 {isBrowserSpeaking ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                             </Button>
                             <span className="text-sm font-medium text-muted-foreground">{isBrowserSpeaking ? 'Leyendo...' : 'Leer con Navegador'}</span>
+                            {BrowserTtsSettings}
                         </div>
                     )}
                 </div>
