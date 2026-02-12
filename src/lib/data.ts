@@ -6,4 +6,5 @@ export const bibleVersions: BibleVersion[] = [
   { id: '48acedcf8595c754-01', name: 'Palabra de Dios para Todos', abbreviation: 'PDT' },
   { id: '482ddd53705278cc-02', name: 'Versión Biblia Libre', abbreviation: 'VBL' },
   { id: '0b262f1ed7f084a6-01', name: 'Hebrew Bible: Westminster Leningrad Codex', abbreviation: 'hboWLC' },
+  { id: '7644de2e4c5188e5-01', name: 'Text-Critical Greek New Testament', abbreviation: 'grcTCGNT' },
 ];
