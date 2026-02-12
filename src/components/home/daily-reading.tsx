@@ -45,6 +45,7 @@ export function DailyReading() {
   
   const [isBrowserTtsSupported, setIsBrowserTtsSupported] = useState(false);
   const [isBrowserSpeaking, setIsBrowserSpeaking] = useState(false);
+  const [isBrowserPaused, setIsBrowserPaused] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>();
   const [speechRate, setSpeechRate] = useState(1);
@@ -101,6 +102,7 @@ export function DailyReading() {
       if (isBrowserTtsSupported && window.speechSynthesis.speaking) {
           window.speechSynthesis.cancel();
           setIsBrowserSpeaking(false);
+          setIsBrowserPaused(false);
       }
   }, [htmlContent, isBrowserTtsSupported]);
   
@@ -120,8 +122,15 @@ export function DailyReading() {
     if (!isBrowserTtsSupported || !textContent) return;
 
     if (window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        setIsBrowserSpeaking(true);
+        setIsBrowserPaused(false);
+      } else {
+        window.speechSynthesis.pause();
         setIsBrowserSpeaking(false);
+        setIsBrowserPaused(true);
+      }
     } else {
         const utterance = new SpeechSynthesisUtterance(textContent);
         const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
@@ -134,11 +143,18 @@ export function DailyReading() {
         }
         utterance.rate = speechRate;
         
-        utterance.onstart = () => setIsBrowserSpeaking(true);
-        utterance.onend = () => setIsBrowserSpeaking(false);
+        utterance.onstart = () => {
+            setIsBrowserSpeaking(true);
+            setIsBrowserPaused(false);
+        };
+        utterance.onend = () => {
+            setIsBrowserSpeaking(false);
+            setIsBrowserPaused(false);
+        };
         utterance.onerror = (e) => {
             console.error("Browser TTS error:", e.error);
             setIsBrowserSpeaking(false);
+            setIsBrowserPaused(false);
             setError(`Ocurrió un error con la voz del navegador: ${e.error}`);
         };
         window.speechSynthesis.speak(utterance);
@@ -216,6 +232,8 @@ export function DailyReading() {
   }, []);
 
   const todayFormatted = today.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  
+  const browserTtsLabel = isBrowserPaused ? "Continuar" : (isBrowserSpeaking ? "Leyendo..." : "Leer con Navegador");
 
   const BrowserTtsSettings = (
     <Popover>
@@ -358,7 +376,7 @@ export function DailyReading() {
                             <Button variant="outline" size="icon" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
                                 {isBrowserSpeaking ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                             </Button>
-                            <span className="text-sm font-medium text-muted-foreground">{isBrowserSpeaking ? 'Leyendo...' : 'Leer con Navegador'}</span>
+                            <span className="text-sm font-medium text-muted-foreground">{browserTtsLabel}</span>
                             {BrowserTtsSettings}
                         </div>
                     )}
