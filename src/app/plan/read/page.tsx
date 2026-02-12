@@ -136,7 +136,7 @@ function DailyReadingPageContent() {
                         </CardHeader>
                         <CardContent>
                              <div 
-                                className="prose prose-lg max-w-none font-body leading-relaxed text-justify [&_h3]:font-headline [&_h3]:font-bold [&_h3]:text-xl [&_h3]:text-center"
+                                className="prose prose-lg max-w-none font-body leading-relaxed text-justify"
                                 dangerouslySetInnerHTML={{ __html: htmlContent || ''}}
                             />
                         </CardContent>

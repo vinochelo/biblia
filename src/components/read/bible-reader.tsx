@@ -313,7 +313,7 @@ function BibleReaderContent() {
                     </CardHeader>
                     <CardContent>
                         <div
-                            className="prose prose-lg max-w-none font-body leading-relaxed [&_h3]:font-headline [&_h3]:font-bold [&_h3]:text-xl [&_h3]:text-center [&_p]:mb-4"
+                            className="prose prose-lg max-w-none font-body leading-relaxed [&_p]:mb-4"
                             dangerouslySetInnerHTML={{ __html: chapterContent.content }}
                         />
                     </CardContent>
