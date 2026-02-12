@@ -5,7 +5,7 @@ import Link from "next/link";
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
-import { Loader2, Calendar, AlertCircle } from "lucide-react";
+import { Loader2, Calendar, AlertCircle, Play, Pause } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,15 +13,17 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { textToSpeech, type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall } from "@/lib/utils";
+import { useStudyProgress } from "@/hooks/use-study-progress";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 
 export function DailyReading() {
   const [version, setVersion] = useState(() => {
     if (typeof window === "undefined") {
-      return bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id;
+      return bibleVersions.find(v => v.abbreviation === 'RVR09')?.id || bibleVersions[0].id;
     }
-    return localStorage.getItem(BIBLE_VERSION_STORAGE_KEY) || bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id;
+    return localStorage.getItem(BIBLE_VERSION_STORAGE_KEY) || bibleVersions.find(v => v.abbreviation === 'RVR09')?.id || bibleVersions[0].id;
   });
 
   const [reading, setReading] = useState<Reading | null | undefined>(undefined);
@@ -30,6 +32,51 @@ export function DailyReading() {
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [today, setToday] = useState(new Date());
+
+  const { isCompleted, toggleComplete } = useStudyProgress();
+  const [isBrowserTtsSupported, setIsBrowserTtsSupported] = useState(false);
+  const [isBrowserSpeaking, setIsBrowserSpeaking] = useState(false);
+
+  useEffect(() => {
+    const isSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    setIsBrowserTtsSupported(isSupported);
+
+    // Cleanup function to stop speech when component unmounts
+    return () => {
+        if (isSupported && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+        }
+    };
+  }, []);
+
+  // Stop speaking if text content changes
+  useEffect(() => {
+      if (isBrowserTtsSupported && window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+          setIsBrowserSpeaking(false);
+      }
+  }, [textContent, isBrowserTtsSupported]);
+
+  const handleBrowserSpeech = () => {
+    if (!isBrowserTtsSupported || !textContent) return;
+
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        setIsBrowserSpeaking(false);
+    } else {
+        const utterance = new SpeechSynthesisUtterance(textContent);
+        utterance.lang = 'es-ES';
+        utterance.onstart = () => setIsBrowserSpeaking(true);
+        utterance.onend = () => setIsBrowserSpeaking(false);
+        utterance.onerror = (e) => {
+            console.error("Browser TTS error:", e);
+            setIsBrowserSpeaking(false);
+            setError("Ocurrió un error con la voz del navegador.");
+        };
+        window.speechSynthesis.speak(utterance);
+    }
+  };
+
 
   useEffect(() => {
     const today = new Date();
@@ -115,7 +162,22 @@ export function DailyReading() {
       {reading && (
         <Card>
           <CardHeader>
-            <CardTitle>{reading.passages.join(' • ')}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>{reading.passages.join(' • ')}</CardTitle>
+                <div className="flex items-center space-x-2">
+                    <Checkbox
+                        id={`reading-${reading.month}-${reading.day}`}
+                        checked={isCompleted(reading.month, reading.day)}
+                        onCheckedChange={() => toggleComplete(reading.month, reading.day)}
+                    />
+                    <label
+                        htmlFor={`reading-${reading.month}-${reading.day}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                        Leído
+                    </label>
+                </div>
+            </div>
             <CardDescription>Selecciona la versión de la Biblia que prefieras para la lectura de hoy.</CardDescription>
             <div className="pt-2">
                 <Select value={version} onValueChange={setVersion}>
@@ -147,14 +209,25 @@ export function DailyReading() {
             )}
             {!isTextLoading && textContent && (
               <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                    <AudioPlayer
-                        text={textContent}
-                        fetcher={handleAudioGeneration}
-                        onPlay={() => trackAiApiCall('tts')}
-                        isLoading={isAudioLoading}
-                    />
-                     <span className="text-sm font-medium text-muted-foreground">{isAudioLoading ? "Generando audio..." : "Escuchar Lectura"}</span>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+                    <div className="flex items-center gap-4">
+                        <AudioPlayer
+                            text={textContent}
+                            fetcher={handleAudioGeneration}
+                            onPlay={() => trackAiApiCall('tts')}
+                            isLoading={isAudioLoading}
+                        />
+                         <span className="text-sm font-medium text-muted-foreground">{isAudioLoading ? "Generando audio..." : "Escuchar Lectura (IA)"}</span>
+                    </div>
+
+                    {isBrowserTtsSupported && (
+                        <div className="flex items-center gap-4">
+                            <Button variant="outline" size="icon" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
+                                {isBrowserSpeaking ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                            </Button>
+                            <span className="text-sm font-medium text-muted-foreground">{isBrowserSpeaking ? 'Leyendo...' : 'Leer con Navegador'}</span>
+                        </div>
+                    )}
                 </div>
                  <div className="prose prose-lg max-w-none font-body leading-relaxed text-justify">
                     {textContent.split('\n').map((paragraph, index) => {

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ArrowRight, CheckCircle2, Circle, BookText, Loader2, Speaker } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useStudyProgress } from "@/hooks/use-study-progress";
 
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -42,45 +43,6 @@ function getChapterIdFromPassage(passage: string): string {
     }
     return '';
 }
-
-const useStudyProgress = () => {
-    const [completed, setCompleted] = useState<Set<string>>(new Set());
-
-    useEffect(() => {
-        const savedProgress = localStorage.getItem("study-progress");
-        if (savedProgress) {
-            try {
-                const parsed = JSON.parse(savedProgress);
-                if(Array.isArray(parsed)) {
-                    setCompleted(new Set(parsed));
-                }
-            } catch {
-                setCompleted(new Set());
-            }
-        }
-    }, []);
-
-    const toggleComplete = (month: number, day: number) => {
-        const key = `${month}-${day}`;
-        setCompleted(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(key)) {
-                newSet.delete(key);
-            } else {
-                newSet.add(key);
-            }
-            localStorage.setItem("study-progress", JSON.stringify(Array.from(newSet)));
-            return newSet;
-        });
-    };
-
-    const isCompleted = (month: number, day: number) => {
-        return completed.has(`${month}-${day}`);
-    };
-
-    return { completed, toggleComplete, isCompleted };
-};
-
 
 export function StudyPlanReader() {
   const [currentDate, setCurrentDate] = useState(new Date());
