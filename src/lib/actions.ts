@@ -8,8 +8,6 @@ const API_BASE_URL = 'https://rest.api.bible';
 // La clave API ahora se lee de forma segura desde las variables de entorno del servidor.
 const apiKey = process.env.BIBLE_API_KEY;
 
-const BIBLE_VERSION_FOR_TTS = '592420522e16049f-01'; // RV1909 for TTS content fetching
-
 const bookToId: { [key: string]: string } = {
     "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
     "Josué": "JOS", "Jueces": "JDG", "Rut": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
@@ -165,7 +163,7 @@ function parsePassageString(passage: string): { passageRef: string, chapterIds: 
     return { passageRef: passage, chapterIds: [] };
 }
 
-export async function getPassagesText(passages: string[]): Promise<string | { error: string }> {
+export async function getPassagesText(passages: string[], versionId: string): Promise<string | { error: string }> {
     let fullText = "";
 
     for (const p of passages) {
@@ -175,7 +173,7 @@ export async function getPassagesText(passages: string[]): Promise<string | { er
 
         fullText += `\n\n${passageRef}\n`;
 
-        const chapterPromises = chapterIds.map(id => getChapter(BIBLE_VERSION_FOR_TTS, id));
+        const chapterPromises = chapterIds.map(id => getChapter(versionId, id));
         const results = await Promise.all(chapterPromises);
 
         let passageContent = "";

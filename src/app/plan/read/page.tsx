@@ -16,6 +16,7 @@ function DailyReadingPageContent() {
     const searchParams = useSearchParams();
     const month = searchParams.get('month');
     const day = searchParams.get('day');
+    const BIBLE_VERSION_FOR_TTS = '592420522e16049f-01'; // RV1909
 
     const [reading, setReading] = useState<Reading | null | undefined>(undefined);
     const [textContent, setTextContent] = useState<string | null>(null);
@@ -41,7 +42,7 @@ function DailyReadingPageContent() {
             if (reading) {
                 setIsTextLoading(true);
                 setError(null);
-                const result = await getPassagesText(reading.passages);
+                const result = await getPassagesText(reading.passages, BIBLE_VERSION_FOR_TTS);
                 if (typeof result === 'object' && result.error) {
                     setError(result.error);
                 } else if (typeof result === 'string') {
@@ -123,7 +124,6 @@ function DailyReadingPageContent() {
                                     fetcher={handleAudioGeneration}
                                     onPlay={() => trackAiApiCall('tts')}
                                     isLoading={isAudioLoading}
-                                    autoPlay={false}
                                 />
                                 {isAudioLoading ? "Generando audio..." : "Escuchar Lectura"}
                             </CardTitle>
