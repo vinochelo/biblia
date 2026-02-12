@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -69,9 +70,9 @@ export function DailyReading() {
         utterance.onstart = () => setIsBrowserSpeaking(true);
         utterance.onend = () => setIsBrowserSpeaking(false);
         utterance.onerror = (e) => {
-            console.error("Browser TTS error:", e);
+            console.error("Browser TTS error:", e.error);
             setIsBrowserSpeaking(false);
-            setError("Ocurrió un error con la voz del navegador.");
+            setError(`Ocurrió un error con la voz del navegador: ${e.error}`);
         };
         window.speechSynthesis.speak(utterance);
     }
