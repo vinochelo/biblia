@@ -74,7 +74,13 @@ export async function searchVerses(
     return { verses: [], total: 0, bibleId: versionId };
   }
 
-  const result = await apiCall<any>(`/v1/bibles/${versionId}/search?query=${encodeURIComponent(query)}&sort=relevance`);
+  const params = {
+    query: query,
+    sort: 'relevance',
+    limit: '100'
+  };
+
+  const result = await apiCall<any>(`/v1/bibles/${versionId}/search`, params);
 
   if ('error' in result) {
     return result;

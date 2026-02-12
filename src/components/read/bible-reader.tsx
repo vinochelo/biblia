@@ -40,7 +40,11 @@ function BibleReaderContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  const [version, setVersion] = useState<string>(bibleVersions.find(v => v.abbreviation === 'RV1909')?.id || bibleVersions[0].id);
+  const [version, setVersion] = useState<string>(() => {
+    if (typeof window === 'undefined') return bibleVersions[0].id;
+    return localStorage.getItem(BIBLE_VERSION_STORAGE_KEY) || bibleVersions[0].id;
+  });
+
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
@@ -65,16 +69,10 @@ function BibleReaderContent() {
   const contentRef = useRef<HTMLDivElement>(null);
 
 
-  useEffect(() => {
-    const savedVersion = localStorage.getItem(BIBLE_VERSION_STORAGE_KEY);
-    if (savedVersion && bibleVersions.some(v => v.id === savedVersion)) {
-        setVersion(savedVersion);
-    }
-  }, []);
-
   const handleVersionChange = (newVersion: string) => {
     setVersion(newVersion);
     localStorage.setItem(BIBLE_VERSION_STORAGE_KEY, newVersion);
+    // Reset selections when version changes
     setSelectedBook(null);
     setChapters([]);
     setSelectedChapter(null);
@@ -82,11 +80,72 @@ function BibleReaderContent() {
     router.push(`/read`);
   };
 
+  const handleBookChange = (bookId: string) => {
+    setSelectedBook(bookId);
+    localStorage.setItem(LAST_BOOK_STORAGE_KEY, bookId);
+    // Reset chapter when book changes
+    setSelectedChapter(null);
+    setChapterContent(null);
+    localStorage.removeItem(LAST_CHAPTER_STORAGE_KEY);
+    router.push(`/read?book=${bookId}`);
+  };
+
+  const handleChapterChange = (chapterId: string) => {
+    setSelectedChapter(chapterId);
+    localStorage.setItem(LAST_CHAPTER_STORAGE_KEY, chapterId);
+    router.push(`/read?chapter=${chapterId}`);
+  };
+
+  const fetchBooks = useCallback(async (versionId: string) => {
+    setIsLoading(p => ({ ...p, books: true }));
+    setError(null);
+    trackApiCall();
+    const booksResponse = await getBooks(versionId);
+    if ("error" in booksResponse) {
+      setError(booksResponse.error);
+    } else {
+      setBooks(booksResponse);
+      // Determine which book to select
+      const chapterIdFromUrl = searchParams.get('chapter');
+      const bookIdFromUrl = chapterIdFromUrl?.split('.')[0] || searchParams.get('book');
+      const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
+      const bookToSelect = bookIdFromUrl || lastBook;
+      if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
+        setSelectedBook(bookToSelect);
+      } else {
+        // If no valid book is found, we don't select one
+        setSelectedBook(null);
+      }
+    }
+    setIsLoading(p => ({ ...p, books: false }));
+  }, [searchParams]);
+
+  const fetchChapters = useCallback(async (versionId: string, bookId: string) => {
+    setIsLoading(p => ({ ...p, chapters: true }));
+    setError(null);
+    trackApiCall();
+    const response = await getChapters(versionId, bookId);
+    if ("error" in response) {
+      setError(response.error);
+    } else {
+      setChapters(response);
+      // Determine which chapter to select
+      const chapterIdFromUrl = searchParams.get('chapter');
+      const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
+      const chapterToSelect = chapterIdFromUrl || (lastChapter && lastChapter.startsWith(bookId) ? lastChapter : null);
+      if (chapterToSelect && response.some(c => c.id === chapterToSelect)) {
+        setSelectedChapter(chapterToSelect);
+      } else {
+        setSelectedChapter(null);
+      }
+    }
+    setIsLoading(p => ({ ...p, chapters: false }));
+  }, [searchParams]);
+  
   const fetchChapterContent = useCallback(async (versionId: string, chapterId: string) => {
     setIsLoading(p => ({ ...p, content: true }));
     setError(null);
     setChapterContent(null);
-
     trackApiCall();
     const response = await getChapter(versionId, chapterId);
     if ("error" in response) {
@@ -97,90 +156,29 @@ function BibleReaderContent() {
     setIsLoading(p => ({ ...p, content: false }));
   }, []);
 
-  const fetchChapters = useCallback(async (versionId: string, bookId: string) => {
-    setIsLoading(p => ({ ...p, chapters: true }));
-    setError(null);
-    setChapters([]);
-    
-    trackApiCall();
-    const response = await getChapters(versionId, bookId);
-    if ("error" in response) {
-      setError(response.error);
-    } else {
-      setChapters(response);
-      const chapterIdFromUrl = searchParams.get('chapter');
-      const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
-      
-      let chapterToSelect = null;
-      if (chapterIdFromUrl && chapterIdFromUrl.startsWith(bookId)) {
-          chapterToSelect = chapterIdFromUrl;
-      } else if (lastChapter && lastChapter.startsWith(bookId)) {
-          chapterToSelect = lastChapter;
-      }
-
-      if (chapterToSelect && response.some(c => c.id === chapterToSelect)) {
-           setSelectedChapter(chapterToSelect);
-      } else {
-          setSelectedChapter(null);
-          setChapterContent(null);
-      }
-    }
-    setIsLoading(p => ({ ...p, chapters: false }));
-  }, [searchParams]);
-
+  // Main data fetching logic
   useEffect(() => {
-    setError(null);
-    setIsLoading(p => ({ ...p, books: true }));
-    
-    async function fetchInitialData() {
-      trackApiCall();
-      const booksResponse = await getBooks(version);
-      if ("error" in booksResponse) {
-        setError(booksResponse.error);
-        setBooks([]);
-      } else {
-        setBooks(booksResponse);
-        const chapterIdFromUrl = searchParams.get('chapter');
-        const bookIdFromUrl = chapterIdFromUrl?.split('.')[0] || searchParams.get('book');
-        const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
-        
-        let bookToSelect = bookIdFromUrl || lastBook;
-
-        if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
-            setSelectedBook(bookToSelect);
-        }
-      }
-      setIsLoading(p => ({ ...p, books: false }));
-    }
-    fetchInitialData();
-  }, [version, searchParams]);
+    fetchBooks(version);
+  }, [version, fetchBooks]);
 
   useEffect(() => {
     if (selectedBook) {
-        fetchChapters(version, selectedBook);
+      fetchChapters(version, selectedBook);
+    } else {
+      // Clear dependent state if no book is selected
+      setChapters([]);
+      setSelectedChapter(null);
     }
   }, [selectedBook, version, fetchChapters]);
 
   useEffect(() => {
     if (selectedChapter) {
-        fetchChapterContent(version, selectedChapter);
-        router.replace(`/read?chapter=${selectedChapter}`);
+      fetchChapterContent(version, selectedChapter);
+    } else {
+      // Clear content if no chapter is selected
+      setChapterContent(null);
     }
-  }, [selectedChapter, version, fetchChapterContent, router]);
-
-  const handleBookChange = (bookId: string) => {
-    setSelectedBook(bookId);
-    setSelectedChapter(null);
-    setChapterContent(null);
-    localStorage.setItem(LAST_BOOK_STORAGE_KEY, bookId);
-    localStorage.removeItem(LAST_CHAPTER_STORAGE_KEY);
-    router.push(`/read?book=${bookId}`);
-  };
-
-  const handleChapterChange = (chapterId: string) => {
-    setSelectedChapter(chapterId);
-    localStorage.setItem(LAST_CHAPTER_STORAGE_KEY, chapterId);
-  };
+  }, [selectedChapter, version, fetchChapterContent]);
   
   const handleSelection = () => {
     const selection = window.getSelection();

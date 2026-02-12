@@ -27,6 +27,7 @@ import {
 const LAST_BOOK_STORAGE_KEY = "last-book-id";
 const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
 const LAST_VERSIONS_STORAGE_KEY = "last-comparison-versions";
+const LAST_VERSE_QUERY_STORAGE_KEY = "last-comparison-verse";
 const DEFAULT_VERSION_FOR_STRUCTURE = "592420522e16049f-01"; // RV1909 for books/chapters list
 
 function VerseComparisonContent() {
@@ -41,11 +42,7 @@ function VerseComparisonContent() {
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
 
-  const [selectedVersions, setSelectedVersions] = useState<string[]>([
-    "592420522e16049f-01", // RV1909
-    "6b7f504f1b6050c1-01", // NBV
-    "482ddd53705278cc-02", // VBL
-  ]);
+  const [selectedVersions, setSelectedVersions] = useState<string[]>([]);
   const [comparisonResults, setComparisonResults] = useState<
     { version: BibleVersion; verse: Verse | { error: string } }[]
   >([]);
@@ -57,44 +54,44 @@ function VerseComparisonContent() {
   });
   const [error, setError] = useState<string | null>(null);
 
-   useEffect(() => {
-    const bookFromUrl = searchParams.get('book');
-    const chapterFromUrl = searchParams.get('chapter');
+  // Load saved state from localStorage on initial render
+  useEffect(() => {
     const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
     const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
+    const lastVerse = localStorage.getItem(LAST_VERSE_QUERY_STORAGE_KEY);
+    const lastVersions = localStorage.getItem(LAST_VERSIONS_STORAGE_KEY);
+    
+    // Prioritize URL params over localStorage
+    const bookFromUrl = searchParams.get('book');
+    const chapterFromUrl = searchParams.get('chapter');
 
-    if (bookFromUrl) {
-      setSelectedBook(bookFromUrl);
-    } else if (lastBook) {
-      setSelectedBook(lastBook);
+    const bookToSet = bookFromUrl || lastBook;
+    if (bookToSet) setSelectedBook(bookToSet);
+
+    const chapterToSet = chapterFromUrl || lastChapter;
+    if (chapterToSet && bookToSet && chapterToSet.startsWith(bookToSet)) {
+      setSelectedChapter(chapterToSet);
     }
     
-    if (chapterFromUrl) {
-      setSelectedChapter(chapterFromUrl);
-    } else if (lastChapter && lastBook && chapterFromUrl?.startsWith(lastBook)) {
-      setSelectedChapter(lastChapter);
+    if(lastVerse) setVerseQuery(lastVerse);
+
+    if (lastVersions) {
+      try {
+        const parsed = JSON.parse(lastVersions);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedVersions(parsed);
+        }
+      } catch (e) {
+        // Fallback to default if parsing fails
+        setSelectedVersions(["592420522e16049f-01", "6b7f504f1b6050c1-01", "482ddd53705278cc-02"]);
+      }
+    } else {
+        // Default selection
+        setSelectedVersions(["592420522e16049f-01", "6b7f504f1b6050c1-01", "482ddd53705278cc-02"]);
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    const savedVersions = localStorage.getItem(LAST_VERSIONS_STORAGE_KEY);
-    if (savedVersions) {
-        try {
-            const parsedVersions = JSON.parse(savedVersions);
-            if (Array.isArray(parsedVersions) && parsedVersions.length > 0) {
-                setSelectedVersions(parsedVersions);
-            }
-        } catch (e) {
-            // Ignore potential parsing errors
-        }
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(LAST_VERSIONS_STORAGE_KEY, JSON.stringify(selectedVersions));
-  }, [selectedVersions]);
-
-
+  // Fetch books
   const fetchBooks = useCallback(async () => {
     setIsLoading(p => ({ ...p, books: true }));
     setError(null);
@@ -106,17 +103,17 @@ function VerseComparisonContent() {
     } else {
         setBooks(booksResponse);
         if (!selectedBook && booksResponse.length > 0) {
-            const bookFromUrl = searchParams.get('book');
-            const lastBook = localStorage.getItem(LAST_BOOK_STORAGE_KEY);
-            const bookToSelect = bookFromUrl || lastBook;
-            if (bookToSelect && booksResponse.some(b => b.id === bookToSelect)) {
-                setSelectedBook(bookToSelect);
-            }
+            setSelectedBook(booksResponse[0].id);
         }
     }
     setIsLoading(p => ({ ...p, books: false }));
-  }, [searchParams, selectedBook]);
+  }, [selectedBook]);
 
+  useEffect(() => {
+    fetchBooks();
+  }, [fetchBooks]);
+  
+  // Fetch chapters when a book is selected
   const fetchChapterList = useCallback(async (bookId: string) => {
     setIsLoading(p => ({ ...p, chapters: true }));
     setError(null);
@@ -129,7 +126,7 @@ function VerseComparisonContent() {
       setChapters(response);
       const chapterFromUrl = searchParams.get('chapter');
       const lastChapter = localStorage.getItem(LAST_CHAPTER_STORAGE_KEY);
-      const chapterToSelect = chapterFromUrl || lastChapter;
+      const chapterToSelect = chapterFromUrl || (lastChapter && lastChapter.startsWith(bookId) ? lastChapter : null);
 
       if(chapterToSelect && response.some(c => c.id === chapterToSelect)) {
           setSelectedChapter(chapterToSelect);
@@ -139,10 +136,6 @@ function VerseComparisonContent() {
   }, [searchParams]);
   
   useEffect(() => {
-    fetchBooks();
-  }, [fetchBooks]);
-
-  useEffect(() => {
       if (selectedBook) {
         fetchChapterList(selectedBook);
       }
@@ -150,11 +143,11 @@ function VerseComparisonContent() {
 
 
   const handleVersionToggle = (versionId: string) => {
-    setSelectedVersions((prev) =>
-      prev.includes(versionId)
-        ? prev.filter((id) => id !== versionId)
-        : [...prev, versionId]
-    );
+    const newVersions = selectedVersions.includes(versionId)
+        ? selectedVersions.filter((id) => id !== versionId)
+        : [...selectedVersions, versionId];
+    setSelectedVersions(newVersions);
+    localStorage.setItem(LAST_VERSIONS_STORAGE_KEY, JSON.stringify(newVersions));
   };
   
   const handleCompare = async (event?: React.FormEvent<HTMLFormElement>) => {
@@ -222,6 +215,12 @@ function VerseComparisonContent() {
       router.push(`/compare?book=${bookId}&chapter=${chapterId}`, { scroll: false });
   }
   
+  const handleVerseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newVerse = e.target.value;
+      setVerseQuery(newVerse);
+      localStorage.setItem(LAST_VERSE_QUERY_STORAGE_KEY, newVerse);
+  }
+
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
@@ -259,7 +258,7 @@ function VerseComparisonContent() {
                             placeholder="Ej: 1"
                             className="h-11 text-base"
                             value={verseQuery}
-                            onChange={(e) => setVerseQuery(e.target.value)}
+                            onChange={handleVerseChange}
                         />
                     </div>
                 </div>
