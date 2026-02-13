@@ -50,51 +50,45 @@ export function DailyReading() {
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>();
   const [speechRate, setSpeechRate] = useState(1);
 
+  // Effect for setting up browser TTS
   useEffect(() => {
     const isSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
     setIsBrowserTtsSupported(isSupported);
+    if (!isSupported) return;
 
-    const getVoices = () => {
-        if (!isSupported) return;
+    const loadAndSetVoices = () => {
         const availableVoices = window.speechSynthesis.getVoices();
-        if (availableVoices.length === 0) return;
+        if (availableVoices.length === 0) return; // Wait for onvoiceschanged
 
         const spanishVoices = availableVoices.filter(voice => voice.lang.startsWith('es'));
-        const defaultVoices = availableVoices.filter(voice => voice.default);
-        setVoices(availableVoices);
+        setVoices(spanishVoices);
 
         const savedVoiceURI = localStorage.getItem(BROWSER_VOICE_URI_KEY);
-        if (savedVoiceURI && availableVoices.some(v => v.voiceURI === savedVoiceURI)) {
-            setSelectedVoiceURI(savedVoiceURI);
-        } else if (spanishVoices.length > 0) {
-            setSelectedVoiceURI(spanishVoices[0].voiceURI);
-        } else if (defaultVoices.length > 0) {
-            setSelectedVoiceURI(defaultVoices[0].voiceURI);
-        } else if (availableVoices.length > 0){
-            setSelectedVoiceURI(availableVoices[0].voiceURI);
+        
+        if (spanishVoices.length > 0) {
+            if (savedVoiceURI && spanishVoices.some(v => v.voiceURI === savedVoiceURI)) {
+                setSelectedVoiceURI(savedVoiceURI);
+            } else {
+                setSelectedVoiceURI(spanishVoices[0].voiceURI);
+            }
+        } else {
+            setSelectedVoiceURI(undefined);
         }
     };
     
-    getVoices();
-    if (isSupported) {
-        window.speechSynthesis.onvoiceschanged = getVoices;
-    }
+    window.speechSynthesis.onvoiceschanged = loadAndSetVoices;
+    loadAndSetVoices();
 
     const savedRate = localStorage.getItem(BROWSER_VOICE_RATE_KEY);
-    if (savedRate) {
-        setSpeechRate(parseFloat(savedRate));
-    }
+    if (savedRate) setSpeechRate(parseFloat(savedRate));
 
-    // Cleanup function
     return () => {
-        if (isSupported) {
-            if (window.speechSynthesis.speaking) {
-                window.speechSynthesis.cancel();
-            }
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
             window.speechSynthesis.onvoiceschanged = null;
         }
     };
-}, [isBrowserTtsSupported]);
+  }, []);
 
 
   // Stop speaking if text content changes
@@ -120,32 +114,36 @@ export function DailyReading() {
 
   const handleBrowserSpeech = () => {
     if (!isBrowserTtsSupported || !textContent) return;
+    const speech = window.speechSynthesis;
 
-    if (window.speechSynthesis.speaking) {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-        setIsBrowserSpeaking(true);
-        setIsBrowserPaused(false);
-      } else {
-        window.speechSynthesis.pause();
+    if (speech.speaking && !speech.paused) {
+        speech.pause();
         setIsBrowserSpeaking(false);
         setIsBrowserPaused(true);
-      }
+    } else if (speech.paused) {
+        speech.resume();
+        setIsBrowserSpeaking(true);
+        setIsBrowserPaused(false);
     } else {
+        speech.cancel(); // Cancel any stuck utterance
+        
         const utterance = new SpeechSynthesisUtterance(textContent);
         const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
         
         if (voice) {
             utterance.voice = voice;
-            utterance.lang = voice.lang;
         } else {
-            utterance.lang = 'es-ES';
+            setError("No hay una voz en español seleccionada. Revisa los ajustes de voz del navegador.");
+            return;
         }
+        
+        utterance.lang = 'es-ES';
         utterance.rate = speechRate;
         
         utterance.onstart = () => {
             setIsBrowserSpeaking(true);
             setIsBrowserPaused(false);
+            setError(null);
         };
         utterance.onend = () => {
             setIsBrowserSpeaking(false);
@@ -155,9 +153,10 @@ export function DailyReading() {
             console.error("Browser TTS error:", e.error);
             setIsBrowserSpeaking(false);
             setIsBrowserPaused(false);
-            setError(`Ocurrió un error con la voz del navegador: ${e.error}`);
+            setError(`Error de la voz del navegador: ${e.error}`);
         };
-        window.speechSynthesis.speak(utterance);
+        
+        speech.speak(utterance);
     }
   };
 
@@ -233,7 +232,7 @@ export function DailyReading() {
 
   const todayFormatted = today.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   
-  const browserTtsLabel = isBrowserPaused ? "Continuar" : (isBrowserSpeaking ? "Leyendo..." : "Leer con Navegador");
+  const browserTtsLabel = isBrowserPaused ? "Continuar" : (isBrowserSpeaking ? "Pausar" : "Leer con Navegador");
 
   const BrowserTtsSettings = (
     <Popover>
@@ -259,7 +258,7 @@ export function DailyReading() {
                             disabled={voices.length === 0}
                         >
                             <SelectTrigger id="voice">
-                                <SelectValue placeholder="Seleccionar voz" />
+                                <SelectValue placeholder={voices.length === 0 ? "No hay voces en español" : "Seleccionar voz"} />
                             </SelectTrigger>
                             <SelectContent>
                                 {voices.map(voice => (
