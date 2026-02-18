@@ -89,6 +89,6 @@
     -moz-osx-font-smoothing: grayscale;
   }
   .prose h3 {
-    @apply font-headline font-bold text-xl text-center;
+    @apply font-headline font-bold text-xl text-center uppercase;
   }
 }
