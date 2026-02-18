@@ -339,7 +339,7 @@ function BibleReaderContent() {
                             Definición y versículos relacionados para <span className="font-bold">{dictionaryResult?.term}</span>
                         </DialogDescription>
                     </DialogHeader>
-                    <ScrollArea className="pr-4 -mr-4">
+                    <ScrollArea className="flex-1 min-h-0 pr-4 -mr-4">
                       <div className="space-y-6 py-4">
                         <div>
                           <h3 className="text-lg font-headline font-bold mb-2">Definición</h3>
