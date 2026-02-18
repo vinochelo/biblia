@@ -1,4 +1,3 @@
-
 "use client";
 
 import { getBooks, getChapters, getChapter } from "@/lib/actions";
@@ -333,7 +332,7 @@ function BibleReaderContent() {
             )}
             
             <Dialog open={isDictionaryOpen} onOpenChange={setIsDictionaryOpen}>
-                <DialogContent className="sm:max-w-md md:max-w-2xl max-h-[90vh]">
+                <DialogContent className="sm:max-w-md md:max-w-2xl max-h-[90vh] flex flex-col">
                      <DialogHeader>
                         <DialogTitle className="font-headline text-2xl">Diccionario y Concordancia</DialogTitle>
                         <DialogDescription>
