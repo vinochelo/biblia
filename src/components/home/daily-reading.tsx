@@ -1,12 +1,12 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
-import { Loader2, Calendar, AlertCircle, Play, Pause, Settings } from "lucide-react";
+import { Loader2, Calendar, AlertCircle, Play, Pause, Settings, BookOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,6 +19,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { defineTerm } from "@/ai/flows/dictionary-flow";
+import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
@@ -49,6 +53,15 @@ export function DailyReading() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>();
   const [speechRate, setSpeechRate] = useState(1);
+
+  // Dictionary state
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [selection, setSelection] = useState<string>("");
+  const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
+  const [isDictionaryOpen, setIsDictionaryOpen] = useState(false);
+  const [dictionaryResult, setDictionaryResult] = useState<{term: string, definition: string, reference?: string} | null>(null);
+  const [concordanceResult, setConcordanceResult] = useState<ConcordanceOutput | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState({ dictionary: false, concordance: false });
 
   // Effect for setting up browser TTS
   useEffect(() => {
@@ -110,7 +123,6 @@ export function DailyReading() {
   useEffect(() => {
     localStorage.setItem(BROWSER_VOICE_RATE_KEY, String(speechRate));
   }, [speechRate]);
-
 
   const handleBrowserSpeech = () => {
     if (!isBrowserTtsSupported || !textContent) return;
@@ -229,6 +241,61 @@ export function DailyReading() {
       setIsAudioLoading(false);
     }
   }, []);
+
+  const handleSelection = () => {
+    if (isDictionaryOpen) return;
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (text.length > 2 && text.length < 50 && contentRef.current?.contains(selection?.anchorNode)) {
+      setSelection(text);
+      const range = selection?.getRangeAt(0);
+      if (range) {
+        setSelectionRect(range.getBoundingClientRect());
+      }
+    } else {
+      setSelection("");
+      setSelectionRect(null);
+    }
+  };
+
+  const handleDefine = async () => {
+    if (!selection) return;
+    setIsAiLoading({ dictionary: true, concordance: true });
+    setDictionaryResult(null);
+    setConcordanceResult(null);
+    setIsDictionaryOpen(true);
+    setSelectionRect(null);
+
+    trackAiApiCall('dictionary');
+
+    try {
+        const sel = window.getSelection();
+        const range = sel?.getRangeAt(0);
+        let context = '';
+        if (range) {
+            const parentElement = range.startContainer.parentElement;
+            context = parentElement?.textContent || '';
+        }
+
+        const [definitionResult, concordanceData] = await Promise.all([
+          defineTerm({ term: selection, context }),
+          findConcordance({ term: selection, context })
+        ]);
+
+        setDictionaryResult(definitionResult);
+        setIsAiLoading(p => ({ ...p, dictionary: false }));
+
+        setConcordanceResult(concordanceData);
+        setIsAiLoading(p => ({ ...p, concordance: false }));
+
+    } catch (e) {
+        console.error(e);
+        setDictionaryResult({term: selection, definition: "No se pudo obtener la definición. Inténtalo de nuevo."});
+        setConcordanceResult({verses: []});
+        setIsAiLoading({ dictionary: false, concordance: false });
+    }
+  };
+
 
   const todayFormatted = today.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   
@@ -383,6 +450,8 @@ export function DailyReading() {
                  <div 
                     className="prose prose-lg max-w-none font-body leading-relaxed text-justify"
                     dangerouslySetInnerHTML={{ __html: htmlContent }}
+                    ref={contentRef}
+                    onMouseUp={handleSelection}
                  />
               </div>
             )}
@@ -399,6 +468,78 @@ export function DailyReading() {
         </Button>
       </div>
 
+       {selectionRect && (
+        <div 
+            style={{
+                position: 'fixed',
+                top: `${selectionRect.top - 40}px`,
+                left: `${selectionRect.left + selectionRect.width / 2 - 20}px`,
+                zIndex: 10,
+            }}
+        >
+            <Button onClick={handleDefine} size="icon" className="rounded-full shadow-lg">
+                <BookOpen className="h-5 w-5" />
+            </Button>
+        </div>
+      )}
+      
+      <Dialog open={isDictionaryOpen} onOpenChange={setIsDictionaryOpen}>
+        <DialogContent className="sm:max-w-md md:max-w-2xl max-h-[90vh] flex flex-col p-0">
+            <DialogHeader className="p-6 pb-4 border-b shrink-0">
+              <DialogTitle className="font-headline text-2xl">Diccionario y Concordancia</DialogTitle>
+              <DialogDescription>
+                  Definición y versículos relacionados para <span className="font-bold">{dictionaryResult?.term}</span>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-headline font-bold mb-2">Definición</h3>
+                  {isAiLoading.dictionary ? (
+                      <div className="flex justify-center items-center h-24">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                  ) : (
+                      <div className="space-y-2 text-base">
+                          <p>{dictionaryResult?.definition}</p>
+                          {dictionaryResult?.reference && (
+                              <blockquote className="mt-4 border-l-2 pl-4 italic">
+                                  {dictionaryResult.reference}
+                              </blockquote>
+                          )}
+                      </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                <div>
+                  <h3 className="text-lg font-headline font-bold mb-2">Concordancia</h3>
+                  {isAiLoading.concordance ? (
+                      <div className="flex justify-center items-center h-48">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                  ) : (
+                    concordanceResult && concordanceResult.verses.length > 0 ? (
+                      <div className="space-y-4">
+                        {concordanceResult.verses.map((verse, index) => (
+                          <div key={index}>
+                            <h4 className="font-bold font-headline">{verse.reference}</h4>
+                            <p className="text-muted-foreground">{verse.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground italic">No se encontraron concordancias.</p>
+                    )
+                  )}
+                </div>
+              </div>
+            </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+    
