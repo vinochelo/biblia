@@ -176,7 +176,10 @@ function VerseComparisonContent() {
     const results = await Promise.all(
       selectedVersions.map(async (versionId) => {
         trackApiCall();
-        const version = bibleVersions.find((v) => v.id === versionId)!;
+        const version = bibleVersions.find((v) => v.id === versionId);
+        if (!version) {
+          return null;
+        }
         const verse = await getVerse(versionId, verseId);
         if ("error" in verse) {
             if (typeof verse.error === 'string' && verse.error.toLowerCase().includes('not found')) {
@@ -187,16 +190,22 @@ function VerseComparisonContent() {
       })
     );
 
-    const firstSuccess = results.find(r => !("error" in r.verse));
+    const validResults = results.filter(Boolean) as { version: BibleVersion, verse: Verse | { error: string } }[];
+
+    const firstSuccess = validResults.find(r => r.verse && !("error" in r.verse));
     if (!firstSuccess) {
-        setError("No se encontró el versículo en ninguna de las versiones seleccionadas. Verifica el número de versículo.");
+        if (validResults.length > 0) {
+            setError("No se encontró el versículo en ninguna de las versiones seleccionadas. Verifica el número de versículo.");
+        } else if (selectedVersions.length > 0) {
+            setError("Las versiones seleccionadas no son válidas.");
+        }
     } else {
         if (!reference && !("error" in firstSuccess.verse)) {
             setReference(firstSuccess.verse.reference);
         }
     }
     
-    setComparisonResults(results);
+    setComparisonResults(validResults);
     setIsLoading(p => ({ ...p, content: false }));
   };
 
@@ -350,5 +359,3 @@ export function VerseComparison() {
       </Suspense>
     )
 }
-
-    
