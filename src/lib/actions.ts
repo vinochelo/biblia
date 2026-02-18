@@ -181,7 +181,11 @@ export async function getPassagesText(passages: string[], versionId: string): Pr
                 return { error: `No se pudo cargar el texto para ${chapterId}: ${result.error}` };
             }
             if (result && result.content) {
-                combinedContent += result.content;
+                // The API call for `getChapter` doesn't include the main Book+Chapter title in the HTML content.
+                // The `reference` property in the response contains the full reference (e.g., "Hechos 21").
+                // I'll manually prepend this reference as an <h3> tag to the content of each chapter.
+                // The h3 is already styled to be uppercase by `globals.css`.
+                combinedContent += `<h3>${result.reference}</h3>${result.content}`;
             }
         }
     }
