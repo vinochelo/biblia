@@ -332,15 +332,15 @@ function BibleReaderContent() {
             )}
             
             <Dialog open={isDictionaryOpen} onOpenChange={setIsDictionaryOpen}>
-                <DialogContent className="sm:max-w-md md:max-w-2xl max-h-[90vh] flex flex-col">
-                     <DialogHeader>
+                <DialogContent className="sm:max-w-md md:max-w-2xl max-h-[90vh] flex flex-col p-0">
+                     <DialogHeader className="p-6 pb-4 border-b">
                         <DialogTitle className="font-headline text-2xl">Diccionario y Concordancia</DialogTitle>
                         <DialogDescription>
                             Definición y versículos relacionados para <span className="font-bold">{dictionaryResult?.term}</span>
                         </DialogDescription>
                     </DialogHeader>
-                    <ScrollArea className="flex-1 min-h-0 pr-4 -mr-4">
-                      <div className="space-y-6 py-4">
+                    <ScrollArea className="flex-1 min-h-0">
+                      <div className="space-y-6 p-6">
                         <div>
                           <h3 className="text-lg font-headline font-bold mb-2">Definición</h3>
                           {isLoading.dictionary ? (
