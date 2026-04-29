@@ -6,7 +6,7 @@ import Link from "next/link";
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
-import { Loader2, Calendar, AlertCircle, Play, Pause, Settings, BookOpen } from "lucide-react";
+import { Loader2, Calendar, AlertCircle, Play, Pause, Settings, BookOpen, Type, Minus, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +28,11 @@ import { Separator } from "@/components/ui/separator";
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
 const BROWSER_VOICE_RATE_KEY = 'browser-tts-rate';
+const FONT_SIZE_KEY = 'reader-font-size';
+
+type FontSize = 'sm' | 'md' | 'lg';
+const FONT_SIZE_LABELS: Record<FontSize, string> = { sm: 'Pequeña', md: 'Mediana', lg: 'Grande' };
+const FONT_SIZES: FontSize[] = ['sm', 'md', 'lg'];
 
 export function DailyReading() {
   const [version, setVersion] = useState(() => {
@@ -53,6 +58,10 @@ export function DailyReading() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | undefined>();
   const [speechRate, setSpeechRate] = useState(1);
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    if (typeof window === 'undefined') return 'md';
+    return (localStorage.getItem(FONT_SIZE_KEY) as FontSize) || 'md';
+  });
 
   // Dictionary state
   const contentRef = useRef<HTMLDivElement>(null);
@@ -123,6 +132,16 @@ export function DailyReading() {
   useEffect(() => {
     localStorage.setItem(BROWSER_VOICE_RATE_KEY, String(speechRate));
   }, [speechRate]);
+
+  useEffect(() => {
+    localStorage.setItem(FONT_SIZE_KEY, fontSize);
+  }, [fontSize]);
+
+  const cycleFontSize = (direction: 'up' | 'down') => {
+    const idx = FONT_SIZES.indexOf(fontSize);
+    if (direction === 'up' && idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx + 1]);
+    if (direction === 'down' && idx > 0) setFontSize(FONT_SIZES[idx - 1]);
+  };
 
   const handleBrowserSpeech = () => {
     if (!isBrowserTtsSupported || !textContent) return;
@@ -357,10 +376,11 @@ export function DailyReading() {
 );
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-2 text-center">
+    <div className="space-y-6 md:space-y-8">
+      <div className="space-y-1 text-center">
+        <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground font-sans">Plan de Lectura</p>
         <h1 className="text-3xl md:text-4xl font-headline font-bold">Lectura del Día</h1>
-        <p className="text-muted-foreground capitalize">{todayFormatted}</p>
+        <p className="text-muted-foreground capitalize text-sm md:text-base">{todayFormatted}</p>
       </div>
 
       {!reading && !isTextLoading && (
@@ -377,11 +397,11 @@ export function DailyReading() {
       )}
 
       {reading && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>{reading.passages.join(' • ')}</CardTitle>
-                <div className="flex items-center space-x-2">
+        <Card className="shadow-lg border-border/50 overflow-hidden">
+          <CardHeader className="bg-gradient-to-b from-primary/5 to-transparent pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-lg md:text-xl">{reading.passages.join(' • ')}</CardTitle>
+                <div className="flex items-center space-x-2 shrink-0">
                     <Checkbox
                         id={`reading-${reading.month}-${reading.day}`}
                         checked={isCompleted(reading.month, reading.day)}
@@ -395,10 +415,9 @@ export function DailyReading() {
                     </label>
                 </div>
             </div>
-            <CardDescription>Selecciona la versión de la Biblia que prefieras para la lectura de hoy.</CardDescription>
-            <div className="pt-2">
+            <div className="pt-3">
                 <Select value={version} onValueChange={setVersion}>
-                    <SelectTrigger className="w-full sm:w-[280px]">
+                    <SelectTrigger className="w-full sm:w-[280px] bg-background/80">
                         <SelectValue placeholder="Seleccionar versión" />
                     </SelectTrigger>
                     <SelectContent>
@@ -425,33 +444,66 @@ export function DailyReading() {
               </Alert>
             )}
             {!isTextLoading && htmlContent && (
-              <div className="space-y-6">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-                    <div className="flex items-center gap-4">
+              <div className="space-y-4">
+                {/* Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-secondary/50 border border-border/50">
+                    {/* Audio IA */}
+                    <div className="flex items-center gap-2">
                         <AudioPlayer
                             text={textContent}
                             fetcher={handleAudioGeneration}
                             onPlay={() => trackAiApiCall('tts')}
                             isLoading={isAudioLoading}
                         />
-                         <span className="text-sm font-medium text-muted-foreground">{isAudioLoading ? "Generando audio..." : "Escuchar Lectura (IA)"}</span>
+                         <span className="text-xs md:text-sm font-medium text-muted-foreground hidden sm:inline">{isAudioLoading ? "Generando..." : "Audio IA"}</span>
                     </div>
 
+                    {/* Browser TTS */}
                     {isBrowserTtsSupported && (
-                        <div className="flex items-center gap-2">
-                            <Button variant="outline" size="icon" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
-                                {isBrowserSpeaking ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                        <div className="flex items-center gap-1.5">
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
+                                {isBrowserSpeaking ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                             </Button>
-                            <span className="text-sm font-medium text-muted-foreground">{browserTtsLabel}</span>
+                            <span className="text-xs font-medium text-muted-foreground hidden sm:inline">{browserTtsLabel}</span>
                             {BrowserTtsSettings}
                         </div>
                     )}
+
+                    {/* Font Size Controls */}
+                    <div className="flex items-center gap-1.5 ml-auto">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => cycleFontSize('down')}
+                            disabled={fontSize === 'sm'}
+                            aria-label="Reducir tamaño de letra"
+                        >
+                            <Minus className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="text-xs font-sans font-medium text-muted-foreground w-8 text-center select-none">
+                            <Type className="h-3.5 w-3.5 inline" />
+                        </span>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => cycleFontSize('up')}
+                            disabled={fontSize === 'lg'}
+                            aria-label="Aumentar tamaño de letra"
+                        >
+                            <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
                 </div>
+
+                {/* Bible text content */}
                  <div 
-                    className="prose prose-lg max-w-none font-body leading-relaxed text-justify"
+                    className={`prose max-w-none font-body text-justify reader-text-${fontSize}`}
                     dangerouslySetInnerHTML={{ __html: htmlContent }}
                     ref={contentRef}
                     onMouseUp={handleSelection}
+                    onTouchEnd={handleSelection}
                  />
               </div>
             )}

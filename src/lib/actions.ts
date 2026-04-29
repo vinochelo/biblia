@@ -113,6 +113,19 @@ export async function getChapters(versionId: string, bookId: string): Promise<Ch
     return apiCall<ChapterSummary[]>(`/v1/bibles/${versionId}/books/${bookId}/chapters`);
 }
 
+/**
+ * Post-procesa el HTML de la API para formatear los números de versículo.
+ * La API devuelve: <span data-number="1" class="v">1</span>Texto
+ * Necesitamos asegurar un espacio después del cierre del span para separar el número del texto.
+ */
+function formatVerseNumbers(html: string): string {
+  // Añadir un espacio después de los spans de versículo si no existe
+  return html.replace(
+    /(<span[^>]*class="v"[^>]*>\d{1,3}<\/span>)(\S)/g,
+    '$1 $2'
+  );
+}
+
 export async function getChapter(versionId: string, chapterId: string): Promise<Chapter | { error: string }> {
     const params = {
         'content-type': 'html',
@@ -126,8 +139,9 @@ export async function getChapter(versionId: string, chapterId: string): Promise<
      if ('error' in result) {
         return result;
     }
-    // The API sometimes wraps the content in a weird object, this unwraps it.
+    // Formatear los números de versículo en el contenido HTML
     if (typeof result === 'object' && result !== null && 'content' in result && typeof (result as any).content === 'string') {
+        result.content = formatVerseNumbers(result.content);
         return result;
     }
     return result;
