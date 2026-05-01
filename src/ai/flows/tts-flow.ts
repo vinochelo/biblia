@@ -91,6 +91,8 @@ async function toWav(
   });
 }
 
+import { getCachedAudio, cacheAudio } from '@/lib/audio-cache';
+
 const ttsFlow = ai.defineFlow(
   {
     name: 'ttsFlow',
@@ -98,8 +100,18 @@ const ttsFlow = ai.defineFlow(
     outputSchema: TTSOutputSchema,
   },
   async (input) => {
-    const chunks = splitTextIntoChunks(input.text);
-    console.log(`TTS (Gemini): Texto dividido en ${chunks.length} fragmento(s) (${input.text.length} caracteres total)`);
+    const voiceName = 'Fenrir';
+    const normalizedText = input.text.trim();
+    
+    // 1. Intentar obtener del cache
+    const cachedUrl = await getCachedAudio(normalizedText, voiceName);
+    if (cachedUrl) {
+      return { audio: cachedUrl };
+    }
+
+    // 2. Si no hay cache, generar fragmentos
+    const chunks = splitTextIntoChunks(normalizedText);
+    console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres total)`);
 
     const pcmBuffers: Buffer[] = [];
 
@@ -112,7 +124,7 @@ const ttsFlow = ai.defineFlow(
           responseModalities: ['AUDIO'],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+              prebuiltVoiceConfig: { voiceName },
             },
           },
         },
@@ -137,12 +149,14 @@ const ttsFlow = ai.defineFlow(
     // Convertir a WAV
     const wavBase64 = await toWav(combinedPcmBuffer);
     
+    // 3. Guardar en cache para futuras solicitudes
+    const downloadUrl = await cacheAudio(normalizedText, voiceName, wavBase64);
+
     const sizeKB = (Buffer.byteLength(wavBase64, 'base64') / 1024).toFixed(1);
-    const sizeMB = (Buffer.byteLength(wavBase64, 'base64') / (1024 * 1024)).toFixed(2);
-    console.log(`TTS (Gemini): Audio completo generado - ${sizeKB} KB (${sizeMB} MB)`);
+    console.log(`TTS (Gemini): Audio generado y cacheado - ${sizeKB} KB`);
 
     return {
-      audio: `data:audio/wav;base64,${wavBase64}`,
+      audio: downloadUrl,
     };
   }
 );

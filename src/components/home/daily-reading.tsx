@@ -80,14 +80,29 @@ export function DailyReading() {
 
     const loadAndSetVoices = () => {
         const availableVoices = window.speechSynthesis.getVoices();
-        // En lugar de filtrar solo español, mostramos TODAS las voces del sistema
-        // por si la voz masculina está escondida sin etiqueta de idioma.
-        // Ordenamos para que las que dicen 'es' aparezcan primero.
         const allVoices = [...availableVoices].sort((a, b) => {
-            const aIsEs = a.lang.toLowerCase().includes('es');
-            const bIsEs = b.lang.toLowerCase().includes('es');
+            const aLang = a.lang.toLowerCase();
+            const bLang = b.lang.toLowerCase();
+            const aName = a.name.toLowerCase();
+            const bName = b.name.toLowerCase();
+            
+            const aIsEs = aLang.includes('es');
+            const bIsEs = bLang.includes('es');
+            
+            // Prioridad 1: Idioma Español
             if (aIsEs && !bIsEs) return -1;
             if (!aIsEs && bIsEs) return 1;
+            
+            if (aIsEs && bIsEs) {
+                // Prioridad 2: Intentar detectar voces masculinas por nombre (común en Android)
+                const maleKeywords = ['male', 'masculino', 'paco', 'pablo', 'ricardo', 'enrique', 'diego', 'alfonso', 'carlos'];
+                const aIsMale = maleKeywords.some(k => aName.includes(k));
+                const bIsMale = maleKeywords.some(k => bName.includes(k));
+                
+                if (aIsMale && !bIsMale) return -1;
+                if (!aIsMale && bIsMale) return 1;
+            }
+            
             return a.name.localeCompare(b.name);
         });
         setVoices(allVoices);
@@ -387,11 +402,18 @@ export function DailyReading() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="default">Voz del Sistema (Predeterminada)</SelectItem>
-                                {voices.map(voice => (
-                                    <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
-                                        {voice.name} ({voice.lang})
-                                    </SelectItem>
-                                ))}
+                                {voices.map(voice => {
+                                    const nameLower = voice.name.toLowerCase();
+                                    const isMale = ['male', 'masculino', 'paco', 'pablo', 'ricardo', 'enrique', 'diego', 'alfonso', 'carlos'].some(k => nameLower.includes(k));
+                                    const isFemale = ['female', 'femenino', 'ana', 'helena', 'laura', 'maria', 'rosa'].some(k => nameLower.includes(k));
+                                    const genderIcon = isMale ? " ♂️" : (isFemale ? " ♀️" : "");
+                                    
+                                    return (
+                                        <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                                            {voice.name}{genderIcon} ({voice.lang})
+                                        </SelectItem>
+                                    );
+                                })}
                             </SelectContent>
                         </Select>
                     </div>
