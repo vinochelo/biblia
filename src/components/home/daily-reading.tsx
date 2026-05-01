@@ -156,17 +156,20 @@ export function DailyReading() {
         setIsBrowserSpeaking(true);
         setIsBrowserPaused(false);
     } else {
-        speech.cancel(); // Cancel any stuck utterance
+        // En Android, llamar a speech.cancel() justo antes de speech.speak() 
+        // a menudo cancela la nueva lectura por una condición de carrera.
+        // Lo quitamos para evitar que bloquee el inicio del audio.
         
         const utterance = new SpeechSynthesisUtterance(textContent);
         const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
         
         if (voice) {
             utterance.voice = voice;
-        } else {
-            setError("No hay una voz en español seleccionada. Revisa los ajustes de voz del navegador.");
-            return;
         }
+        // We do not return an error if the voice is not found because on mobile 
+        // browsers (especially iOS Safari), the voices array is often empty 
+        // until speech synthesis is triggered for the first time. The browser
+        // will automatically use the default voice for 'es-ES' anyway.
         
         utterance.lang = 'es-ES';
         utterance.rate = speechRate;
@@ -184,10 +187,17 @@ export function DailyReading() {
             console.error("Browser TTS error:", e.error);
             setIsBrowserSpeaking(false);
             setIsBrowserPaused(false);
-            setError(`Error de la voz del navegador: ${e.error}`);
+            // Ignore interruption errors which happen naturally on stop/pause
+            if (e.error !== 'interrupted' && e.error !== 'canceled') {
+               setError(`Error de la voz del navegador: ${e.error}`);
+            }
         };
         
-        speech.speak(utterance);
+        // Un pequeño retraso asegura que el motor de TTS de Android esté listo
+        // si ha habido alguna cancelación o cambio de estado reciente.
+        setTimeout(() => {
+            speech.speak(utterance);
+        }, 50);
     }
   };
 

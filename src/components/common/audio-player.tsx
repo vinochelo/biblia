@@ -55,23 +55,32 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
     // If audio is not loaded, generate it first
     if (text && fetcher && !audioSrc) {
+       // Mobile browsers (iOS Safari, Android Chrome) require Audio to be played 
+       // directly in a user interaction event. Since fetcher is async, we must 
+       // unlock the Audio element synchronously first.
+       const newAudio = new Audio();
+       // Silent base64 to unlock the element
+       newAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+       newAudio.play().catch(() => { /* Ignore silence play error */ });
+       audioRef.current = newAudio;
+
        try {
          const result = await fetcher(text); // fetcher now handles loading state and errors
          if (result && result.audio) {
            setAudioSrc(result.audio); // Cache the audio source
            
-           const newAudio = new Audio(result.audio);
-           audioRef.current = newAudio;
-
-           newAudio.onplay = handlePlay; // Call onPlay only when audio actually starts playing
-           newAudio.onended = () => setIsPlaying(false);
-           newAudio.onerror = () => {
-              console.error('Error playing generated audio.');
-              setIsPlaying(false);
-           };
-           
-           await newAudio.play();
-           setIsPlaying(true);
+           if (audioRef.current) {
+             audioRef.current.src = result.audio;
+             audioRef.current.onplay = handlePlay; // Call onPlay only when audio actually starts playing
+             audioRef.current.onended = () => setIsPlaying(false);
+             audioRef.current.onerror = () => {
+                console.error('Error playing generated audio.');
+                setIsPlaying(false);
+             };
+             
+             await audioRef.current.play();
+             setIsPlaying(true);
+           }
          }
        } catch (e) {
          // Error is handled by the parent component that provides the fetcher
