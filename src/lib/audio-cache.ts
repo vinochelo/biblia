@@ -14,6 +14,7 @@ function getCacheKey(text: string, voice: string): string {
  * Retorna el string base64 o null si no existe.
  */
 export async function getCachedAudio(text: string, voice: string): Promise<string | null> {
+    if (!db) return null;
     try {
         const key = getCacheKey(text, voice);
         const dbRef = ref(db, `tts_cache/${key}`);
@@ -33,20 +34,20 @@ export async function getCachedAudio(text: string, voice: string): Promise<strin
  * Guarda un audio generado (en formato base64 completo) en la Realtime Database.
  */
 export async function cacheAudio(text: string, voice: string, base64Wav: string): Promise<string> {
+    const dataUri = `data:audio/wav;base64,${base64Wav}`;
+    if (!db) return dataUri;
     try {
         const key = getCacheKey(text, voice);
         const dbRef = ref(db, `tts_cache/${key}`);
         
         console.log(`TTS Cache (DB): Guardando audio en base de datos para llave ${key}...`);
         
-        // Guardamos el data URI completo
-        const dataUri = `data:audio/wav;base64,${base64Wav}`;
         await set(dbRef, dataUri);
         
         console.log(`TTS Cache (DB): Guardado exitosamente.`);
         return dataUri;
     } catch (error) {
         console.error("Error al guardar en cache (DB):", error);
-        throw error;
+        return dataUri;
     }
 }
