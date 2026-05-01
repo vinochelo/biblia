@@ -109,14 +109,45 @@ export function DailyReading() {
 
         const savedVoiceURI = localStorage.getItem(BROWSER_VOICE_URI_KEY);
         
-        if (allVoices.length > 0) {
-            if (savedVoiceURI && (savedVoiceURI === 'default' || allVoices.some(v => v.voiceURI === savedVoiceURI))) {
-                setSelectedVoiceURI(savedVoiceURI);
-            } else {
-                setSelectedVoiceURI('default'); // Por defecto, usar la voz del sistema
+        // Filtrar voces duplicadas (mismo voiceURI = misma voz real)
+        const uniqueVoicesMap = new Map<string, SpeechSynthesisVoice>();
+        allVoices.forEach(v => {
+            if (!uniqueVoicesMap.has(v.voiceURI)) {
+                uniqueVoicesMap.set(v.voiceURI, v);
             }
+        });
+        const uniqueVoices = Array.from(uniqueVoicesMap.values());
+        
+        // Debug: mostrar voces únicas disponibles
+        console.log('Voces únicas disponibles:', uniqueVoices.map(v => `${v.name} (${v.lang}) - URI: ${v.voiceURI}`));
+        
+        if (uniqueVoices.length > 0) {
+            let defaultVoiceURI = 'default';
+            
+            // Si solo hay una voz única, usar la predeterminada del sistema
+            // Si hay varias voces únicas, buscar una en español
+            if (uniqueVoices.length === 1) {
+                defaultVoiceURI = 'default';
+            } else {
+                // Buscar voces en español entre las voces únicas
+                const spanishVoices = uniqueVoices.filter(v => v.lang.toLowerCase().includes('es'));
+                
+                if (spanishVoices.length > 0 && savedVoiceURI && uniqueVoices.some(v => v.voiceURI === savedVoiceURI)) {
+                    defaultVoiceURI = savedVoiceURI;
+                } else if (spanishVoices.length > 0) {
+                    defaultVoiceURI = spanishVoices[0].voiceURI;
+                } else if (savedVoiceURI && uniqueVoices.some(v => v.voiceURI === savedVoiceURI)) {
+                    defaultVoiceURI = savedVoiceURI;
+                }
+            }
+            
+            setSelectedVoiceURI(defaultVoiceURI);
+            
+            // Guardar voces únicas para el dropdown (sin duplicados)
+            setVoices(uniqueVoices.sort((a, b) => a.name.localeCompare(b.name)));
         } else {
             setSelectedVoiceURI('default');
+            setVoices([]);
         }
     };
     
@@ -205,11 +236,18 @@ export function DailyReading() {
         if (currentChunk) chunks.push(currentChunk);
 
         const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
-
+        
+        // Verificar si la voz realmente funciona (no es un alias)
+        // Muchas voces en Windows son aliases - si todas tienen el mismo URI, usamos solo lang
+        const uniqueVoiceURIs = [...new Set(voices.map(v => v.voiceURI))];
+        
         chunks.forEach((chunk, index) => {
             const utterance = new SpeechSynthesisUtterance(chunk);
             
-            if (voice) utterance.voice = voice;
+            // Intentar siempre asignar la voz seleccionada
+            if (voice && selectedVoiceURI !== 'default') {
+                utterance.voice = voice;
+            }
             utterance.lang = 'es-ES';
             utterance.rate = speechRate;
             
@@ -319,7 +357,8 @@ export function DailyReading() {
     if (isDictionaryOpen) return;
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
-    if (text.length > 2 && text.length < 50 && contentRef.current?.contains(selection?.anchorNode)) {
+    const anchorNode = selection?.anchorNode;
+    if (text.length > 2 && text.length < 50 && anchorNode && contentRef.current?.contains(anchorNode)) {
       setSelection(text);
       const range = selection?.getRangeAt(0);
       if (range) {
@@ -388,6 +427,26 @@ export function DailyReading() {
                     <p className="text-sm text-muted-foreground">
                         Controla la voz y la velocidad de la lectura.
                     </p>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        onClick={() => {
+                            // Abrir configuración de TTS del sistema en Android
+                            if (/Android/i.test(navigator.userAgent)) {
+                                try {
+                                    // Intentar abrir configuración de síntesis de voz
+                                    window.location.href = "intent:#Intent;action=android.settings.TTS_SETTINGS;end";
+                                } catch {
+                                    // Fallback para algunos dispositivos
+                                    window.location.href = "intent:#Intent;action=android.speech.tts.engine.TTS_ENGINE_SETTINGS;end";
+                                }
+                            }
+                        }}
+                    >
+                        <Settings className="h-4 w-4 mr-2" />
+                        Configurar Voz del Sistema
+                    </Button>
                 </div>
                 <div className="grid gap-4">
                      <div className="space-y-2">

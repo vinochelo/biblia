@@ -1,8 +1,14 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // Los archivos de audio TTS son públicos (lectura) pero solo el servidor puede escribir
+    match /tts_audio/{audioFile} {
+      allow read: if true;
+      allow write: if false; // Solo el Admin SDK puede escribir (bypassa estas reglas)
+    }
+    // Regla por defecto: deniega acceso
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

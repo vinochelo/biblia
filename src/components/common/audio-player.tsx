@@ -59,6 +59,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
        // directly in a user interaction event. Since fetcher is async, we must 
        // unlock the Audio element synchronously first.
        const newAudio = new Audio();
+       newAudio.crossOrigin = 'anonymous'; // Necesario para URLs de Firebase Storage
        // Silent base64 to unlock the element
        newAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
        newAudio.play().catch(() => { /* Ignore silence play error */ });

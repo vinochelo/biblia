@@ -182,7 +182,8 @@ function BibleReaderContent() {
   const handleSelection = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
-    if (text.length > 2 && text.length < 50 && contentRef.current?.contains(selection?.anchorNode)) {
+    const anchorNode = selection?.anchorNode;
+    if (text.length > 2 && text.length < 50 && anchorNode && contentRef.current?.contains(anchorNode)) {
       setSelection(text);
       const range = selection?.getRangeAt(0);
       if (range) {

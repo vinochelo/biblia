@@ -15,7 +15,7 @@ const TTSInputSchema = z.object({
 export type TTSInput = z.infer<typeof TTSInputSchema>;
 
 const TTSOutputSchema = z.object({
-  audio: z.string().describe("A data URI of the generated audio in WAV format. Format: 'data:audio/wav;base64,<encoded_data>'"),
+  audio: z.string().describe("A URL to the generated audio. Can be a Firebase Storage public URL (https://...) or a data URI fallback (data:audio/wav;base64,...)."),
 });
 export type TTSOutput = z.infer<typeof TTSOutputSchema>;
 
@@ -118,18 +118,31 @@ const ttsFlow = ai.defineFlow(
     for (let i = 0; i < chunks.length; i++) {
       console.log(`TTS (Gemini): Generando fragmento ${i + 1}/${chunks.length} (${chunks[i].length} chars)`);
       
-      const { media } = await ai.generate({
-        model: 'googleai/gemini-2.5-flash-preview-tts',
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
+      let media;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          const result = await ai.generate({
+            model: 'googleai/gemini-2.5-flash-preview-tts',
+            config: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName },
+                },
+              },
             },
-          },
-        },
-        prompt: chunks[i],
-      });
+            prompt: chunks[i],
+          });
+          media = result.media;
+          break; // Éxito
+        } catch (error: any) {
+          console.warn(`⚠️ TTS (Gemini): Falló fragmento ${i + 1}. Reintentando... (${3 - retries + 1}/3)`);
+          retries--;
+          if (retries === 0) throw error;
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Esperar 2 segundos
+        }
+      }
 
       if (!media || !media.url) {
         throw new Error(`No media returned from TTS model on chunk ${i + 1}`);

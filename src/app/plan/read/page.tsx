@@ -105,10 +105,11 @@ function DailyReadingPageContent() {
 
     const handleSelection = () => {
         if (isDictionaryOpen) return;
-        const selection = window.getSelection();
-        const text = selection?.toString().trim() ?? "";
-        if (text.length > 2 && text.length < 50 && contentRef.current?.contains(selection?.anchorNode)) {
-          setSelection(text);
+const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    const anchorNode = selection?.anchorNode;
+    if (text.length > 2 && text.length < 50 && anchorNode && contentRef.current?.contains(anchorNode)) {
+      setSelection(text);
           const range = selection?.getRangeAt(0);
           if (range) {
             setSelectionRect(range.getBoundingClientRect());
