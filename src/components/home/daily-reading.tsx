@@ -126,11 +126,21 @@ export function DailyReading() {
   useEffect(() => {
     if (selectedVoiceURI) {
         localStorage.setItem(BROWSER_VOICE_URI_KEY, selectedVoiceURI);
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            setIsBrowserSpeaking(false);
+            setIsBrowserPaused(false);
+        }
     }
   }, [selectedVoiceURI]);
 
   useEffect(() => {
     localStorage.setItem(BROWSER_VOICE_RATE_KEY, String(speechRate));
+    if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        setIsBrowserSpeaking(false);
+        setIsBrowserPaused(false);
+    }
   }, [speechRate]);
 
   useEffect(() => {
