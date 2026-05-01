@@ -169,10 +169,13 @@ export async function getVerse(versionId: string, verseId: string): Promise<Vers
 
 function parsePassageString(passage: string): { passageRef: string, chapterIds: string[] } {
     const bookNames = Object.keys(bookToId).sort((a, b) => b.length - a.length);
+    const normalizedPassage = passage.replace(/\s+/g, '');
+    
     for (const bookName of bookNames) {
-        if (passage.startsWith(bookName)) {
+        const normalizedBookName = bookName.replace(/\s+/g, '');
+        if (normalizedPassage.startsWith(normalizedBookName)) {
             const bookId = bookToId[bookName];
-            const remaining = passage.substring(bookName.length).trim();
+            const remaining = normalizedPassage.substring(normalizedBookName.length);
             const chapters = remaining.split(',').map(s => s.trim()).filter(Boolean);
             return {
                 passageRef: passage,

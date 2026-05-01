@@ -156,48 +156,60 @@ export function DailyReading() {
         setIsBrowserSpeaking(true);
         setIsBrowserPaused(false);
     } else {
-        // En Android, llamar a speech.cancel() justo antes de speech.speak() 
-        // a menudo cancela la nueva lectura por una condición de carrera.
-        // Lo quitamos para evitar que bloquee el inicio del audio.
+        // Dividir el texto en fragmentos (chunks) más pequeños.
+        // Android Chrome arroja "synthesis-failed" si el texto supera ~4000 caracteres.
+        const sentences = textContent.match(/[^.!?\n]+[.!?\n]+/g) || [textContent];
+        const chunks: string[] = [];
+        let currentChunk = "";
         
-        const utterance = new SpeechSynthesisUtterance(textContent);
-        const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
-        
-        if (voice) {
-            utterance.voice = voice;
-        }
-        // We do not return an error if the voice is not found because on mobile 
-        // browsers (especially iOS Safari), the voices array is often empty 
-        // until speech synthesis is triggered for the first time. The browser
-        // will automatically use the default voice for 'es-ES' anyway.
-        
-        utterance.lang = 'es-ES';
-        utterance.rate = speechRate;
-        
-        utterance.onstart = () => {
-            setIsBrowserSpeaking(true);
-            setIsBrowserPaused(false);
-            setError(null);
-        };
-        utterance.onend = () => {
-            setIsBrowserSpeaking(false);
-            setIsBrowserPaused(false);
-        };
-        utterance.onerror = (e) => {
-            console.error("Browser TTS error:", e.error);
-            setIsBrowserSpeaking(false);
-            setIsBrowserPaused(false);
-            // Ignore interruption errors which happen naturally on stop/pause
-            if (e.error !== 'interrupted' && e.error !== 'canceled') {
-               setError(`Error de la voz del navegador: ${e.error}`);
+        for (const sentence of sentences) {
+            if (currentChunk.length + sentence.length > 3000) {
+                chunks.push(currentChunk);
+                currentChunk = sentence;
+            } else {
+                currentChunk += sentence;
             }
-        };
-        
-        // Un pequeño retraso asegura que el motor de TTS de Android esté listo
-        // si ha habido alguna cancelación o cambio de estado reciente.
-        setTimeout(() => {
-            speech.speak(utterance);
-        }, 50);
+        }
+        if (currentChunk) chunks.push(currentChunk);
+
+        const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
+
+        chunks.forEach((chunk, index) => {
+            const utterance = new SpeechSynthesisUtterance(chunk);
+            
+            if (voice) utterance.voice = voice;
+            utterance.lang = 'es-ES';
+            utterance.rate = speechRate;
+            
+            if (index === 0) {
+                utterance.onstart = () => {
+                    setIsBrowserSpeaking(true);
+                    setIsBrowserPaused(false);
+                    setError(null);
+                };
+            }
+            
+            if (index === chunks.length - 1) {
+                utterance.onend = () => {
+                    setIsBrowserSpeaking(false);
+                    setIsBrowserPaused(false);
+                };
+            }
+
+            utterance.onerror = (e) => {
+                console.error("Browser TTS error:", e.error);
+                setIsBrowserSpeaking(false);
+                setIsBrowserPaused(false);
+                // Ignore interruption errors which happen naturally on stop/pause
+                if (e.error !== 'interrupted' && e.error !== 'canceled') {
+                   setError(`Error de la voz del navegador: ${e.error}`);
+                }
+            };
+            
+            setTimeout(() => {
+                speech.speak(utterance);
+            }, 50 + (index * 10)); // Ligeramente desfasado para asegurar el orden en la cola
+        });
     }
   };
 
