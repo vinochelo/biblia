@@ -80,15 +80,22 @@ export function DailyReading() {
 
     const loadAndSetVoices = () => {
         const availableVoices = window.speechSynthesis.getVoices();
-        if (availableVoices.length === 0) return; // Wait for onvoiceschanged
-
-        const spanishVoices = availableVoices.filter(voice => voice.lang.startsWith('es'));
-        setVoices(spanishVoices);
+        // En lugar de filtrar solo español, mostramos TODAS las voces del sistema
+        // por si la voz masculina está escondida sin etiqueta de idioma.
+        // Ordenamos para que las que dicen 'es' aparezcan primero.
+        const allVoices = [...availableVoices].sort((a, b) => {
+            const aIsEs = a.lang.toLowerCase().includes('es');
+            const bIsEs = b.lang.toLowerCase().includes('es');
+            if (aIsEs && !bIsEs) return -1;
+            if (!aIsEs && bIsEs) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        setVoices(allVoices);
 
         const savedVoiceURI = localStorage.getItem(BROWSER_VOICE_URI_KEY);
         
-        if (spanishVoices.length > 0) {
-            if (savedVoiceURI && (savedVoiceURI === 'default' || spanishVoices.some(v => v.voiceURI === savedVoiceURI))) {
+        if (allVoices.length > 0) {
+            if (savedVoiceURI && (savedVoiceURI === 'default' || allVoices.some(v => v.voiceURI === savedVoiceURI))) {
                 setSelectedVoiceURI(savedVoiceURI);
             } else {
                 setSelectedVoiceURI('default'); // Por defecto, usar la voz del sistema
