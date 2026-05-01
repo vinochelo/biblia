@@ -88,13 +88,13 @@ export function DailyReading() {
         const savedVoiceURI = localStorage.getItem(BROWSER_VOICE_URI_KEY);
         
         if (spanishVoices.length > 0) {
-            if (savedVoiceURI && spanishVoices.some(v => v.voiceURI === savedVoiceURI)) {
+            if (savedVoiceURI && (savedVoiceURI === 'default' || spanishVoices.some(v => v.voiceURI === savedVoiceURI))) {
                 setSelectedVoiceURI(savedVoiceURI);
             } else {
-                setSelectedVoiceURI(spanishVoices[0].voiceURI);
+                setSelectedVoiceURI('default'); // Por defecto, usar la voz del sistema
             }
         } else {
-            setSelectedVoiceURI(undefined);
+            setSelectedVoiceURI('default');
         }
     };
     
@@ -379,6 +379,7 @@ export function DailyReading() {
                                 <SelectValue placeholder={voices.length === 0 ? "No hay voces en español" : "Seleccionar voz"} />
                             </SelectTrigger>
                             <SelectContent>
+                                <SelectItem value="default">Voz del Sistema (Predeterminada)</SelectItem>
                                 {voices.map(voice => (
                                     <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
                                         {voice.name} ({voice.lang})
