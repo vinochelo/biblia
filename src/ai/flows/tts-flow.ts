@@ -23,7 +23,7 @@ export async function textToSpeech(input: TTSInput): Promise<TTSOutput> {
   return ttsFlow(input);
 }
 
-const MAX_CHUNK_LENGTH = 4500;
+const MAX_CHUNK_LENGTH = 2000;
 
 function splitTextIntoChunks(text: string): string[] {
   if (text.length <= MAX_CHUNK_LENGTH) {
@@ -101,7 +101,8 @@ const ttsFlow = ai.defineFlow(
   },
   async (input) => {
     const voiceName = 'Fenrir';
-    const normalizedText = input.text.trim();
+    // Limpiar el texto: eliminar números de versículos (ej: "1 ", "2 ") para que no se lean
+    const normalizedText = input.text.trim().replace(/\b\d+\b/g, '');
     
     // 1. Intentar obtener del cache
     const cachedUrl = await getCachedAudio(normalizedText, voiceName);
@@ -109,14 +110,12 @@ const ttsFlow = ai.defineFlow(
       return { audio: cachedUrl };
     }
 
-    // 2. Si no hay cache, generar fragmentos
+    // 2. Si no hay cache, generar fragmentos en paralelo
     const chunks = splitTextIntoChunks(normalizedText);
     console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres total)`);
 
-    const pcmBuffers: Buffer[] = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-      console.log(`TTS (Gemini): Generando fragmento ${i + 1}/${chunks.length} (${chunks[i].length} chars)`);
+    const pcmBuffers = await Promise.all(chunks.map(async (chunk, i) => {
+      console.log(`TTS (Gemini): Iniciando fragmento ${i + 1}/${chunks.length} (${chunk.length} chars)`);
       
       let media;
       let retries = 3;
@@ -132,7 +131,7 @@ const ttsFlow = ai.defineFlow(
                 },
               },
             },
-            prompt: chunks[i],
+            prompt: chunk,
           });
           media = result.media;
           break; // Éxito
@@ -140,7 +139,7 @@ const ttsFlow = ai.defineFlow(
           console.warn(`⚠️ TTS (Gemini): Falló fragmento ${i + 1}. Reintentando... (${3 - retries + 1}/3)`);
           retries--;
           if (retries === 0) throw error;
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Esperar 2 segundos
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
@@ -148,13 +147,20 @@ const ttsFlow = ai.defineFlow(
         throw new Error(`No media returned from TTS model on chunk ${i + 1}`);
       }
 
-      // Extraer datos PCM desde la URL base64 devuelta
-      const audioBuffer = Buffer.from(
+      const wavBuffer = Buffer.from(
         media.url.substring(media.url.indexOf(',') + 1),
         'base64'
       );
-      pcmBuffers.push(audioBuffer);
-    }
+      
+      let dataOffset = 44;
+      for (let j = 0; j < Math.min(100, wavBuffer.length - 4); j++) {
+        if (wavBuffer[j] === 0x64 && wavBuffer[j+1] === 0x61 && wavBuffer[j+2] === 0x74 && wavBuffer[j+3] === 0x61) {
+          dataOffset = j + 8;
+          break;
+        }
+      }
+      return wavBuffer.subarray(dataOffset);
+    }));
 
     // Concatenar todos los buffers PCM puros
     const combinedPcmBuffer = Buffer.concat(pcmBuffers);
