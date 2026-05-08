@@ -20,7 +20,10 @@ const TTSOutputSchema = z.object({
 export type TTSOutput = z.infer<typeof TTSOutputSchema>;
 
 export async function textToSpeech(input: TTSInput): Promise<TTSOutput> {
-  return ttsFlow(input);
+    if (!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEYS) {
+        throw new Error('GEMINI_API_KEY no está configurada en las variables de entorno.');
+    }
+    return ttsFlow(input);
 }
 
 const MAX_CHUNK_LENGTH = 2000;
