@@ -66,28 +66,45 @@ export async function getCachedAudio(text: string, voice: string): Promise<strin
 }
 
 export async function cacheAudio(text: string, voice: string, wavBase64: string): Promise<string> {
-  const dataUri = `data:audio/wav;base64,${wavBase64}`;
+  const wavBuffer = Buffer.from(wavBase64, 'base64');
+  const sizeMB = (wavBuffer.length / (1024 * 1024)).toFixed(1);
+  console.log(`TTS Cache: Tamaño del audio WAV: ${sizeMB} MB`);
 
   if (!ensureCloudinaryConfig()) {
-    console.warn("TTS Cache: Retornando data URI local (sin Cloudinary). El audio puede ser pesado.");
-    return dataUri;
+    if (wavBuffer.length > 3 * 1024 * 1024) {
+      console.error("TTS Cache: Audio demasiado grande para data URI sin Cloudinary. Abortando.");
+      throw new Error("Audio generado es demasiado grande para servir sin Cloudinary. Configure las credenciales de Cloudinary.");
+    }
+    console.warn("TTS Cache: Retornando data URI local (sin Cloudinary).");
+    return `data:audio/wav;base64,${wavBase64}`;
   }
 
   const key = getCacheKey(text, voice);
   const MAX_UPLOAD_RETRIES = 3;
+  const UPLOAD_TIMEOUT_MS = 120000;
 
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
     try {
-      console.log(`TTS Cache: Subiendo y comprimiendo a MP3 en Cloudinary... (intento ${attempt}/${MAX_UPLOAD_RETRIES})`);
+      console.log(`TTS Cache: Subiendo y comprimiendo a MP3 en Cloudinary... (intento ${attempt}/${MAX_UPLOAD_RETRIES}, timeout: ${UPLOAD_TIMEOUT_MS / 1000}s)`);
 
-      const uploadResponse = await cloudinary.uploader.upload(dataUri, {
-        resource_type: "video",
-        public_id: `bible_audio/${key}`,
-        format: "mp3",
-        overwrite: true,
-      });
+      const uploadPromise = cloudinary.uploader.upload(
+        `data:audio/wav;base64,${wavBase64}`,
+        {
+          resource_type: "video",
+          public_id: `bible_audio/${key}`,
+          format: "mp3",
+          overwrite: true,
+          timeout: UPLOAD_TIMEOUT_MS,
+        }
+      );
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Upload timeout after ${UPLOAD_TIMEOUT_MS / 1000}s`)), UPLOAD_TIMEOUT_MS + 5000)
+      );
+
+      const uploadResponse = await Promise.race([uploadPromise, timeoutPromise]);
 
       const publicUrl = uploadResponse.secure_url;
 
@@ -99,23 +116,25 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
         }
       }
 
-      console.log(`TTS Cache: Audio subido exitosamente → ${publicUrl}`);
+      const mp3SizeKB = uploadResponse.bytes ? (uploadResponse.bytes / 1024).toFixed(1) : '?';
+      console.log(`TTS Cache: Audio subido exitosamente → ${publicUrl} (MP3: ${mp3SizeKB} KB, compresión: ${sizeMB} MB → ~${Math.round(parseInt(mp3SizeKB || '0') / 1024)} MB)`);
       return publicUrl;
     } catch (error: unknown) {
       lastError = error;
-      const isRetryable = error instanceof Error && (
-        error.message.includes('ECONNRESET') ||
-        error.message.includes('ETIMEDOUT') ||
-        error.message.includes('ECONNREFUSED') ||
-        error.message.includes('network') ||
-        error.message.includes('429') ||
-        error.message.includes('rate')
-      );
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const isRetryable = errorMsg.includes('ECONNRESET') ||
+        errorMsg.includes('ETIMEDOUT') ||
+        errorMsg.includes('ECONNREFUSED') ||
+        errorMsg.includes('network') ||
+        errorMsg.includes('429') ||
+        errorMsg.includes('rate') ||
+        errorMsg.includes('Timeout') ||
+        errorMsg.includes('timeout');
 
-      console.error(`TTS Cache: Error al subir a Cloudinary (intento ${attempt}/${MAX_UPLOAD_RETRIES}):`, error);
+      console.error(`TTS Cache: Error al subir a Cloudinary (intento ${attempt}/${MAX_UPLOAD_RETRIES}):`, errorMsg);
 
       if (isRetryable && attempt < MAX_UPLOAD_RETRIES) {
-        const delayMs = attempt * 3000;
+        const delayMs = attempt * 5000;
         console.log(`TTS Cache: Error reintentable, esperando ${delayMs / 1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       } else {
@@ -124,6 +143,11 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
     }
   }
 
-  console.warn("TTS Cache: Falló la subida a Cloudinary. Retornando data URI local.", lastError);
-  return dataUri;
+  if (wavBuffer.length > 3 * 1024 * 1024) {
+    console.error("TTS Cache: Audio demasiado grande para data URI fallback. Abortando.");
+    throw new Error(`No se pudo subir el audio a Cloudinary (${sizeMB} MB). Reintente en unos minutos.`);
+  }
+
+  console.warn("TTS Cache: Falló la subida a Cloudinary. Retornando data URI local.");
+  return `data:audio/wav;base64,${wavBase64}`;
 }
