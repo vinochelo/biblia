@@ -2,92 +2,128 @@ import { adminDb } from "./firebase-admin";
 import crypto from "crypto";
 import { v2 as cloudinary } from 'cloudinary';
 
-// Configurar Cloudinary usando variables de entorno
-cloudinary.config({ 
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
-  api_key: process.env.CLOUDINARY_API_KEY, 
-  api_secret: process.env.CLOUDINARY_API_SECRET 
-});
+let cloudinaryInitialized = false;
 
-/**
- * Genera un hash único para un texto y una voz específica.
- */
+function ensureCloudinaryConfig(): boolean {
+  if (cloudinaryInitialized) return true;
+
+  const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    console.warn("TTS Cache: Faltan credenciales de Cloudinary (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET).");
+    return false;
+  }
+
+  try {
+    cloudinary.config({
+      cloud_name: CLOUDINARY_CLOUD_NAME,
+      api_key: CLOUDINARY_API_KEY,
+      api_secret: CLOUDINARY_API_SECRET,
+    });
+    cloudinaryInitialized = true;
+    return true;
+  } catch (error) {
+    console.error("TTS Cache: Error configurando Cloudinary:", error);
+    return false;
+  }
+}
+
 function getCacheKey(text: string, voice: string): string {
-    return crypto.createHash('md5').update(text + voice).digest('hex');
+  return crypto.createHash('sha256').update(`${voice}:${text}`).digest('hex').substring(0, 32);
 }
 
-/**
- * Busca si ya existe un audio generado para este texto y voz.
- * Retorna la URL pública de Cloudinary o null si no existe.
- */
 export async function getCachedAudio(text: string, voice: string): Promise<string | null> {
-    if (!adminDb) {
-        console.warn("Firebase Admin DB no está disponible. Cache desactivado.");
-        return null;
+  if (!adminDb) {
+    console.warn("TTS Cache: Firebase Admin DB no disponible. Cache desactivado.");
+    return null;
+  }
+
+  try {
+    const key = getCacheKey(text, voice);
+    const snapshot = await adminDb.ref(`tts_cache/${key}`).get();
+
+    if (!snapshot.exists()) {
+      return null;
     }
+
+    const data = snapshot.val();
+
+    if (typeof data === 'string' && data.startsWith('https://')) {
+      console.log(`TTS Cache: HIT para llave ${key}`);
+      return data;
+    }
+
+    console.log(`TTS Cache: Dato antiguo encontrado para ${key}, se regenerará.`);
     try {
-        const key = getCacheKey(text, voice);
-        const snapshot = await adminDb.ref(`tts_cache/${key}`).get();
-        if (snapshot.exists()) {
-            const data = snapshot.val();
-            // El valor guardado es la URL pública
-            if (typeof data === 'string' && data.startsWith('https://')) {
-                console.log(`TTS Cache: HIT para llave ${key}`);
-                return data;
-            }
-            // Si es un data URI antiguo (formato anterior), ignorarlo para regenerar
-            console.log(`TTS Cache: Dato antiguo encontrado para ${key}, se regenerará.`);
-            return null;
-        }
-        return null;
-    } catch (error) {
-        console.error("Error al buscar en cache:", error);
-        return null;
+      await adminDb.ref(`tts_cache/${key}`).remove();
+    } catch {
+      // No bloquear si no se puede eliminar la entrada antigua
     }
+    return null;
+  } catch (error) {
+    console.error("TTS Cache: Error al buscar en cache:", error);
+    return null;
+  }
 }
 
-/**
- * Sube el audio a Cloudinary (y lo convierte a MP3) y guarda la URL pública en Realtime Database.
- * 
- * @param text - El texto original usado para generar el audio
- * @param voice - El nombre de la voz utilizada
- * @param wavBase64 - El audio en formato WAV codificado en base64 (sin el prefijo data:)
- * @returns La URL pública del archivo en Cloudinary
- */
 export async function cacheAudio(text: string, voice: string, wavBase64: string): Promise<string> {
-    const dataUri = `data:audio/wav;base64,${wavBase64}`;
+  const dataUri = `data:audio/wav;base64,${wavBase64}`;
 
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-        console.warn("Faltan credenciales de Cloudinary. Retornando data URI local temporal.");
-        return dataUri;
-    }
+  if (!ensureCloudinaryConfig()) {
+    console.warn("TTS Cache: Retornando data URI local (sin Cloudinary). El audio puede ser pesado.");
+    return dataUri;
+  }
 
+  const key = getCacheKey(text, voice);
+  const MAX_UPLOAD_RETRIES = 3;
+
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
     try {
-        const key = getCacheKey(text, voice);
-        
-        console.log(`TTS Cache: Iniciando subida y compresión a MP3 en Cloudinary...`);
-        
-        // Subir a Cloudinary como 'video' (audio usa la API de video) y convertir a MP3
-        const uploadResponse = await cloudinary.uploader.upload(dataUri, {
-            resource_type: "video",
-            public_id: `bible_audio/${key}`,
-            format: "mp3", // ¡Esta es la magia! Cloudinary convierte los 33MB de WAV a ~3MB de MP3
-            overwrite: true
-        });
+      console.log(`TTS Cache: Subiendo y comprimiendo a MP3 en Cloudinary... (intento ${attempt}/${MAX_UPLOAD_RETRIES})`);
 
-        const publicUrl = uploadResponse.secure_url;
+      const uploadResponse = await cloudinary.uploader.upload(dataUri, {
+        resource_type: "video",
+        public_id: `bible_audio/${key}`,
+        format: "mp3",
+        overwrite: true,
+      });
 
-        // Guardar SOLO la URL en Realtime Database de Firebase
-        if (adminDb) {
-            await adminDb.ref(`tts_cache/${key}`).set(publicUrl);
+      const publicUrl = uploadResponse.secure_url;
+
+      if (adminDb) {
+        try {
+          await adminDb.ref(`tts_cache/${key}`).set(publicUrl);
+        } catch (dbError) {
+          console.error("TTS Cache: Error guardando URL en Firebase RTDB (audio ya subido a Cloudinary):", dbError);
         }
+      }
 
-        console.log(`TTS Cache: Audio subido exitosamente → ${publicUrl}`);
+      console.log(`TTS Cache: Audio subido exitosamente → ${publicUrl}`);
+      return publicUrl;
+    } catch (error: unknown) {
+      lastError = error;
+      const isRetryable = error instanceof Error && (
+        error.message.includes('ECONNRESET') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('network') ||
+        error.message.includes('429') ||
+        error.message.includes('rate')
+      );
 
-        return publicUrl;
-    } catch (error) {
-        console.error("Error al subir a Cloudinary:", error);
-        // Fallback: retornar data URI si falla la subida
-        return dataUri;
+      console.error(`TTS Cache: Error al subir a Cloudinary (intento ${attempt}/${MAX_UPLOAD_RETRIES}):`, error);
+
+      if (isRetryable && attempt < MAX_UPLOAD_RETRIES) {
+        const delayMs = attempt * 3000;
+        console.log(`TTS Cache: Error reintentable, esperando ${delayMs / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        break;
+      }
     }
+  }
+
+  console.warn("TTS Cache: Falló la subida a Cloudinary. Retornando data URI local.", lastError);
+  return dataUri;
 }

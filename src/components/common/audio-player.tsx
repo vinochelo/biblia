@@ -17,15 +17,37 @@ interface AudioPlayerProps {
 export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading: isParentLoading }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const abortRef = useRef<boolean>(false);
 
-  // Reset state when the text changes to allow re-fetching for new content
+  useEffect(() => {
+    return () => {
+      abortRef.current = true;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.removeAttribute('src');
+        audioRef.current.load();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     setIsPlaying(false);
     setAudioSrc(null);
+    setIsFetching(false);
+    abortRef.current = true;
+
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
       audioRef.current = null;
+    }
+
+    if (text) {
+      abortRef.current = false;
     }
   }, [text]);
 
@@ -36,94 +58,116 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   }, [onPlay]);
 
   const handlePlayPause = useCallback(async () => {
-    if (isParentLoading) return;
+    if (isParentLoading || isFetching) return;
 
-    // If audio is already loaded, just play/pause
     if (audioRef.current && audioSrc) {
-        if (isPlaying) {
-            audioRef.current.pause();
-            setIsPlaying(false);
-        } else {
-            audioRef.current.play().catch(e => {
-                 console.error("Error playing audio:", e);
-                 setIsPlaying(false);
-            });
-            setIsPlaying(true);
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        try {
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } catch (e) {
+          console.error("Error reproduciendo audio:", e);
+          setIsPlaying(false);
         }
-        return;
+      }
+      return;
     }
 
-    // If audio is not loaded, generate it first
     if (text && fetcher && !audioSrc) {
-       // Mobile browsers (iOS Safari, Android Chrome) require Audio to be played 
-       // directly in a user interaction event. Since fetcher is async, we must 
-       // unlock the Audio element synchronously first.
-       const newAudio = new Audio();
-       newAudio.crossOrigin = 'anonymous'; // Necesario para URLs de Firebase Storage
-       // Silent base64 to unlock the element
-       newAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-       newAudio.play().catch(() => { /* Ignore silence play error */ });
-       audioRef.current = newAudio;
+      abortRef.current = false;
+      setIsFetching(true);
 
-       try {
-         const result = await fetcher(text); // fetcher now handles loading state and errors
-         if (result && result.audio) {
-           setAudioSrc(result.audio); // Cache the audio source
-           
-           if (audioRef.current) {
-             audioRef.current.src = result.audio;
-             audioRef.current.onplay = handlePlay; // Call onPlay only when audio actually starts playing
-             audioRef.current.onended = () => setIsPlaying(false);
-             audioRef.current.onerror = () => {
-                console.error('Error playing generated audio.');
-                setIsPlaying(false);
-             };
-             
-             await audioRef.current.play();
-             setIsPlaying(true);
-           }
-         }
-       } catch (e) {
-         // Error is handled by the parent component that provides the fetcher
-         console.error("Fetcher failed:", e);
-       }
+      const newAudio = new Audio();
+      newAudio.crossOrigin = 'anonymous';
+      newAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
+      try {
+        await newAudio.play().catch(() => {});
+      } catch {
+        // Ignorar error de audio silencioso
+      }
+
+      audioRef.current = newAudio;
+
+      try {
+        const result = await fetcher(text);
+
+        if (abortRef.current) {
+          return;
+        }
+
+        if (result?.audio) {
+          setAudioSrc(result.audio);
+
+          if (audioRef.current && !abortRef.current) {
+            audioRef.current.src = result.audio;
+            audioRef.current.onplay = handlePlay;
+            audioRef.current.onended = () => {
+              if (!abortRef.current) setIsPlaying(false);
+            };
+            audioRef.current.onerror = () => {
+              console.error('Error reproduciendo audio generado.');
+              if (!abortRef.current) setIsPlaying(false);
+            };
+
+            try {
+              await audioRef.current.play();
+              if (!abortRef.current) setIsPlaying(true);
+            } catch (e) {
+              console.error("Error iniciando reproducción:", e);
+              if (!abortRef.current) setIsPlaying(false);
+            }
+          }
+        }
+      } catch (e) {
+        if (!abortRef.current) {
+          console.error("Fetcher falló:", e);
+        }
+      } finally {
+        if (!abortRef.current) {
+          setIsFetching(false);
+        }
+      }
     }
-  }, [isParentLoading, audioSrc, isPlaying, text, fetcher, handlePlay]);
+  }, [isParentLoading, isFetching, audioSrc, isPlaying, text, fetcher, handlePlay]);
 
 
   const handleRewind = () => {
     if (audioRef.current) {
-        audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 10);
+      audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 10);
     }
   };
 
   const handleRestart = () => {
-      if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-      }
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+    }
   };
 
 
   const getIcon = () => {
-    if (isParentLoading) {
-        return <Loader2 className="h-5 w-5 animate-spin" />;
+    if (isParentLoading || isFetching) {
+      return <Loader2 className="h-5 w-5 animate-spin" />;
     }
     return isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />;
   };
 
-  const areControlsDisabled = isParentLoading || !audioSrc;
+  const areControlsDisabled = isParentLoading || isFetching || !audioSrc;
 
   return (
     <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon" onClick={handleRestart} disabled={areControlsDisabled} aria-label="Empezar de nuevo">
-            <RotateCcw className="h-5 w-5" />
-        </Button>
-        <Button variant="outline" size="icon" onClick={handleRewind} disabled={areControlsDisabled} aria-label="Retroceder 10 segundos">
-            <Rewind className="h-5 w-5" />
-        </Button>
-        <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || !text} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
-            {getIcon()}
-        </Button>
+      <Button variant="outline" size="icon" onClick={handleRestart} disabled={areControlsDisabled} aria-label="Empezar de nuevo">
+        <RotateCcw className="h-5 w-5" />
+      </Button>
+      <Button variant="outline" size="icon" onClick={handleRewind} disabled={areControlsDisabled} aria-label="Retroceder 10 segundos">
+        <Rewind className="h-5 w-5" />
+      </Button>
+      <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || isFetching || !text} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
+        {getIcon()}
+      </Button>
     </div>
   );
 }
