@@ -304,23 +304,31 @@ export function DailyReading() {
         setHtmlContent(null);
         setTextContent(null);
         
-        const result = await getPassagesText(reading.passages, version);
-        
-        if (typeof result === 'object' && result.error) {
-          setError(result.error);
-        } else if (typeof result === 'string') {
-          setHtmlContent(result);
-          // Create text version for TTS on the client
-          if (typeof window !== 'undefined') {
-            const tempDiv = document.createElement("div");
-            tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
-            // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
-            const verseSpans = tempDiv.querySelectorAll('span.v');
-            verseSpans.forEach(span => span.remove());
-            setTextContent(tempDiv.textContent || tempDiv.innerText || "");
+        try {
+          const result = await getPassagesText(reading.passages, version);
+          
+          if (result && typeof result === 'object' && 'error' in result) {
+            setError(result.error);
+          } else if (typeof result === 'string') {
+            setHtmlContent(result);
+            // Create text version for TTS on the client
+            if (typeof window !== 'undefined') {
+              const tempDiv = document.createElement("div");
+              tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
+              // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
+              const verseSpans = tempDiv.querySelectorAll('span.v');
+              verseSpans.forEach(span => span.remove());
+              setTextContent(tempDiv.textContent || tempDiv.innerText || "");
+            }
+          } else {
+            setError("No se recibió contenido válido de la lectura.");
           }
+        } catch (e: any) {
+          console.error("Error fetching passages in daily-reading:", e);
+          setError(e.message || "Error al cargar la lectura.");
+        } finally {
+          setIsTextLoading(false);
         }
-        setIsTextLoading(false);
       } else {
         setHtmlContent(null);
         setTextContent(null);

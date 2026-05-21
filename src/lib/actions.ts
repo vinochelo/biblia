@@ -82,7 +82,10 @@ export async function searchVerses(
 
   const result = await apiCall<any>(`/v1/bibles/${versionId}/search`, params);
 
-  if ('error' in result) {
+  if (!result) {
+    return { verses: [], total: 0, bibleId: versionId };
+  }
+  if (typeof result === 'object' && 'error' in result) {
     return result;
   }
   
@@ -136,11 +139,14 @@ export async function getChapter(versionId: string, chapterId: string): Promise<
         'include-verse-spans': 'false'
     };
     const result = await apiCall<Chapter>(`/v1/bibles/${versionId}/chapters/${chapterId}`, params);
-     if ('error' in result) {
+    if (!result) {
+        return { error: 'No se recibieron datos del capítulo de la Biblia.' };
+    }
+    if (typeof result === 'object' && 'error' in result) {
         return result;
     }
     // Formatear los números de versículo en el contenido HTML
-    if (typeof result === 'object' && result !== null && 'content' in result && typeof (result as any).content === 'string') {
+    if ('content' in result && typeof (result as any).content === 'string') {
         result.content = formatVerseNumbers(result.content);
         return result;
     }
@@ -157,7 +163,10 @@ export async function getVerse(versionId: string, verseId: string): Promise<Vers
     'include-verse-spans': 'false',
   };
   const result = await apiCall<{id: string; reference: string; content: string}>(`/v1/bibles/${versionId}/verses/${verseId}`, params);
-  if ('error' in result) {
+  if (!result) {
+    return { error: 'No se recibieron datos del versículo de la Biblia.' };
+  }
+  if (typeof result === 'object' && 'error' in result) {
     return result;
   }
   return {
@@ -194,10 +203,13 @@ export async function getPassagesText(passages: string[], versionId: string): Pr
 
         for (const chapterId of chapterIds) {
             const result = await getChapter(versionId, chapterId);
-            if ('error' in result) {
+            if (!result) {
+                return { error: `No se pudo cargar el texto para ${chapterId}: No se recibieron datos.` };
+            }
+            if (typeof result === 'object' && 'error' in result) {
                 return { error: `No se pudo cargar el texto para ${chapterId}: ${result.error}` };
             }
-            if (result && result.content) {
+            if ('content' in result && result.content) {
                 // The API call for `getChapter` doesn't include the main Book+Chapter title in the HTML content.
                 // The `reference` property in the response contains the full reference (e.g., "Hechos 21").
                 // I'll manually prepend this reference as an <h3> tag to the content of each chapter.
