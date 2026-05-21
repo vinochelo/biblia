@@ -314,6 +314,9 @@ export function DailyReading() {
           if (typeof window !== 'undefined') {
             const tempDiv = document.createElement("div");
             tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
+            // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
+            const verseSpans = tempDiv.querySelectorAll('span.v');
+            verseSpans.forEach(span => span.remove());
             setTextContent(tempDiv.textContent || tempDiv.innerText || "");
           }
         }

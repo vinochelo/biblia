@@ -16,14 +16,14 @@ const TTSOutputSchema = z.object({
 export type TTSOutput = z.infer<typeof TTSOutputSchema>;
 
 const MAX_CHUNK_LENGTH = 2000;
-const TTS_MODEL = 'googleai/gemini-2.5-flash-preview-tts';
+const TTS_MODEL = 'googleai/gemini-2.5-flash';
 const TTS_VOICE = 'Fenrir';
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
 const TTS_SAMPLE_WIDTH = 2;
 const MAX_RETRIES = 5;
 const RETRY_BASE_DELAY_MS = 2000;
-const INTER_CHUNK_DELAY_MS = 22000;
+const INTER_CHUNK_DELAY_MS = 1000;
 
 const VERSE_NUMBER_PATTERN = /(?:^|\s)\d{1,3}\s/g;
 
@@ -263,30 +263,38 @@ const ttsFlow = ai.defineFlow(
     }
 
     const chunks = splitTextIntoChunks(normalizedText);
-    console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres) - Procesando secuencialmente para respetar rate limit`);
+    console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres) - Procesando secuencialmente`);
 
     const pcmBuffers: Buffer[] = [];
+    const hasMultipleKeys = getApiKeys().length > 1;
 
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
-        const delaySec = INTER_CHUNK_DELAY_MS / 1000;
-        console.log(`TTS (Gemini): Esperando ${delaySec}s antes de fragmento ${i + 1} (rate limit free tier: ~3 RPM)`);
-        await new Promise(resolve => setTimeout(resolve, INTER_CHUNK_DELAY_MS));
+        // Si hay múltiples API Keys rotando, el delay puede ser menor (100ms)
+        // Si hay una sola key, esperamos INTER_CHUNK_DELAY_MS (1000ms)
+        const delayMs = hasMultipleKeys ? 100 : INTER_CHUNK_DELAY_MS;
+        console.log(`TTS (Gemini): Esperando ${delayMs}ms antes del fragmento ${i + 1}/${chunks.length}`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
 
       const pcmBuffer = await generateSingleChunk(chunks[i], i, chunks.length);
       pcmBuffers.push(pcmBuffer);
-      console.log(`TTS (Gemini): Fragmento ${i + 1}/${chunks.length} completado`);
     }
 
+    // Concatenar todos los buffers PCM puros
     const combinedPcmBuffer = Buffer.concat(pcmBuffers);
+    
+    // Convertir a WAV
     const wavBase64 = await toWav(combinedPcmBuffer);
-
+    
+    // Guardar en cache
     const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, wavBase64);
 
     const sizeKB = (Buffer.byteLength(wavBase64, 'base64') / 1024).toFixed(1);
     console.log(`TTS (Gemini): Audio generado y cacheado - ${sizeKB} KB`);
 
-    return { audio: downloadUrl };
+    return {
+      audio: downloadUrl,
+    };
   }
 );

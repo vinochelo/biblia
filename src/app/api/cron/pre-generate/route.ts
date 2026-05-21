@@ -8,6 +8,8 @@ import { bibleVersions } from '@/lib/data';
  * Endpoint de Cron Job para pre-generar los audios de la lectura del día.
  * Se recomienda configurar en Vercel para que corra a las 00:00 UTC.
  */
+export const maxDuration = 60; // 60 segundos de tiempo de ejecución permitido en Vercel
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
   
@@ -37,6 +39,7 @@ export async function GET(request: Request) {
     if (typeof result === 'string') {
       // Limpiar HTML para convertirlo en texto plano para el TTS
       const plainText = result
+        .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, '') // Eliminar etiquetas de versículo (span class="v") y su contenido
         .replace(/<h3>/g, '\n\n')
         .replace(/<\/h3>/g, '\n')
         .replace(/<[^>]*>?/gm, '') // Eliminar el resto de etiquetas HTML
