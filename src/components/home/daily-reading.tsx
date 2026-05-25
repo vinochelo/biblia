@@ -4,7 +4,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { studyPlan, type Reading } from "@/lib/study-plan";
-import { getPassagesText } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import { Loader2, Calendar, AlertCircle, Play, Pause, Settings, BookOpen, Type, Minus, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
-import { textToSpeech, prepareTTS, generateTTSChunk, finalizeTTS, type TTSOutput } from "@/ai/flows/tts-flow";
+import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall } from "@/lib/utils";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,6 +32,153 @@ const FONT_SIZE_KEY = 'reader-font-size';
 type FontSize = 'sm' | 'md' | 'lg';
 const FONT_SIZE_LABELS: Record<FontSize, string> = { sm: 'Pequeña', md: 'Mediana', lg: 'Grande' };
 const FONT_SIZES: FontSize[] = ['sm', 'md', 'lg'];
+
+// --- Helper: Parse passage string to chapter IDs (client-side) ---
+const bookToId: { [key: string]: string } = {
+  "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
+  "Josué": "JOS", "Jueces": "JDG", "Rut": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
+  "1 Reyes": "1KI", "2 Reyes": "2KI", "1 Crónicas": "1CH", "2 Crónicas": "2CH", "Esdras": "EZR",
+  "Nehemías": "NEH", "Ester": "EST", "Job": "JOB", "Salmos": "PSA", "Proverbios": "PRO",
+  "Eclesiastés": "ECC", "Cantares": "SNG", "Isaías": "ISA", "Jeremías": "JER",
+  "Lamentaciones": "LAM", "Ezequiel": "EZK", "Daniel": "DAN", "Oseas": "HOS", "Joel": "JOL",
+  "Amós": "AMO", "Abdías": "OBA", "Jonás": "JON", "Miqueas": "MIC", "Nahum": "NAM",
+  "Habacuc": "HAB", "Sofonías": "ZEP", "Hageo": "HAG", "Zacarías": "ZEC", "Malaquías": "MAL",
+  "Mateo": "MAT", "Marcos": "MRK", "Lucas": "LUK", "Juan": "JHN", "Hechos": "ACT",
+  "Romanos": "ROM", "1 Corintios": "1CO", "2 Corintios": "2CO", "Gálatas": "GAL", "Efesios": "EPH",
+  "Filipenses": "PHP", "Colosenses": "COL", "1 Tesalonicenses": "1TH", "2 Tesalonicenses": "2TH",
+  "1 Timoteo": "1TI", "2 Timoteo": "2TI", "Tito": "TIT", "Filemón": "PHM", "Hebreos": "HEB",
+  "Santiago": "JAS", "1 Pedro": "1PE", "2 Pedro": "2PE", "1 Juan": "1JN", "2 Juan": "2JN",
+  "3 Juan": "3JN", "Judas": "JUD", "Apocalipsis": "REV"
+};
+
+function parsePassageToChapterIds(passage: string): string[] {
+  const bookNames = Object.keys(bookToId).sort((a, b) => b.length - a.length);
+  const normalizedPassage = passage.replace(/\s+/g, "");
+  for (const bookName of bookNames) {
+    const normalizedBookName = bookName.replace(/\s+/g, "");
+    if (normalizedPassage.startsWith(normalizedBookName)) {
+      const bookId = bookToId[bookName];
+      const remaining = normalizedPassage.substring(normalizedBookName.length);
+      const chapters = remaining.split(",").map((s) => s.trim()).filter(Boolean);
+      return chapters.map((ch) => `${bookId}.${ch}`);
+    }
+  }
+  return [];
+}
+
+// --- Helper: Fetch a single chapter from API route with retry ---
+async function fetchChapterWithRetry(chapterId: string, version: string, retries = 3): Promise<{ reference: string; content: string }> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`/api/passages?chapterId=${encodeURIComponent(chapterId)}&version=${encodeURIComponent(version)}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (e: any) {
+      if (attempt === retries) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+  throw new Error("Falló después de reintentos");
+}
+
+// --- Helper: Full TTS via API routes ---
+async function generateAudioViaApi(
+  text: string,
+  onProgress: (msg: string) => void
+): Promise<TTSOutput | null> {
+  // Step 1: Check cache
+  onProgress("Verificando caché...");
+  const checkRes = await fetch("/api/tts?action=check-cache", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!checkRes.ok) {
+    const err = await checkRes.json().catch(() => ({ error: "Error verificando caché" }));
+    throw new Error(err.error || "Error verificando caché");
+  }
+  const checkData = await checkRes.json();
+
+  if (checkData.status === "cached" && checkData.audio) {
+    return { audio: checkData.audio };
+  }
+
+  // Step 2: Generate each chunk individually
+  const chunks: string[] = checkData.chunks || [];
+  if (chunks.length === 0) throw new Error("No se encontraron fragmentos para generar");
+
+  const pcmParts: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress(`Generando ${i + 1}/${chunks.length}...`);
+
+    let chunkSuccess = false;
+    for (let retry = 0; retry < 3; retry++) {
+      try {
+        const chunkRes = await fetch("/api/tts?action=generate-chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chunkText: chunks[i],
+            chunkIndex: i,
+            totalChunks: chunks.length,
+          }),
+        });
+
+        if (chunkRes.status === 429) {
+          // Rate limited, wait and retry
+          onProgress(`Límite de API, esperando... (${i + 1}/${chunks.length})`);
+          await new Promise((r) => setTimeout(r, 5000 * (retry + 1)));
+          continue;
+        }
+
+        if (!chunkRes.ok) {
+          const errData = await chunkRes.json().catch(() => ({ error: "Error generando chunk" }));
+          if (errData.retryable && retry < 2) {
+            await new Promise((r) => setTimeout(r, 3000 * (retry + 1)));
+            continue;
+          }
+          throw new Error(errData.error || "Error generando audio");
+        }
+
+        const chunkData = await chunkRes.json();
+        pcmParts.push(chunkData.pcmBase64);
+        chunkSuccess = true;
+        break;
+      } catch (e: any) {
+        if (retry === 2) throw e;
+        await new Promise((r) => setTimeout(r, 2000 * (retry + 1)));
+      }
+    }
+
+    if (!chunkSuccess) {
+      throw new Error(`Falló la generación del fragmento ${i + 1}`);
+    }
+
+    // Small delay between chunks
+    if (i < chunks.length - 1) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  // Step 3: Finalize - combine and cache
+  onProgress("Guardando...");
+  const finalRes = await fetch("/api/tts?action=finalize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, pcmParts }),
+  });
+
+  if (!finalRes.ok) {
+    const errData = await finalRes.json().catch(() => ({ error: "Error finalizando audio" }));
+    throw new Error(errData.error || "Error guardando audio");
+  }
+
+  const finalData = await finalRes.json();
+  return { audio: finalData.audio };
+}
 
 export function DailyReading() {
   const [version, setVersion] = useState(() => {
@@ -238,10 +384,6 @@ export function DailyReading() {
 
         const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
         
-        // Verificar si la voz realmente funciona (no es un alias)
-        // Muchas voces en Windows son aliases - si todas tienen el mismo URI, usamos solo lang
-        const uniqueVoiceURIs = [...new Set(voices.map(v => v.voiceURI))];
-        
         chunks.forEach((chunk, index) => {
             const utterance = new SpeechSynthesisUtterance(chunk);
             
@@ -294,6 +436,7 @@ export function DailyReading() {
     setReading(foundReading);
   }, []);
 
+  // --- FETCH CONTENT via API Routes (one chapter at a time) ---
   useEffect(() => {
     localStorage.setItem(BIBLE_VERSION_STORAGE_KEY, version);
     if (reading === undefined) return;
@@ -306,23 +449,39 @@ export function DailyReading() {
         setTextContent(null);
         
         try {
-          const result = await getPassagesText(reading.passages, version);
-          
-          if (result && typeof result === 'object' && 'error' in result) {
-            setError(result.error);
-          } else if (typeof result === 'string') {
-            setHtmlContent(result);
-            // Create text version for TTS on the client
-            if (typeof window !== 'undefined') {
-              const tempDiv = document.createElement("div");
-              tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
-              // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
-              const verseSpans = tempDiv.querySelectorAll('span.v');
-              verseSpans.forEach(span => span.remove());
-              setTextContent(tempDiv.textContent || tempDiv.innerText || "");
-            }
-          } else {
-            setError("No se recibió contenido válido de la lectura.");
+          // Parse all passages into chapter IDs on the client
+          const allChapterIds: string[] = [];
+          for (const passage of reading.passages) {
+            const ids = parsePassageToChapterIds(passage);
+            allChapterIds.push(...ids);
+          }
+
+          if (allChapterIds.length === 0) {
+            setError("No se encontraron capítulos para los pasajes del día.");
+            return;
+          }
+
+          // Fetch each chapter individually via API route (each < 3s, no timeout issues)
+          let combinedContent = "";
+          for (const chapterId of allChapterIds) {
+            const chapter = await fetchChapterWithRetry(chapterId, version);
+            combinedContent += `<h3>${chapter.reference}</h3>${chapter.content}`;
+          }
+
+          if (!combinedContent) {
+            setError("No se encontró contenido para los pasajes seleccionados.");
+            return;
+          }
+
+          setHtmlContent(combinedContent);
+          // Create text version for TTS on the client
+          if (typeof window !== 'undefined') {
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = combinedContent.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
+            // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
+            const verseSpans = tempDiv.querySelectorAll('span.v');
+            verseSpans.forEach(span => span.remove());
+            setTextContent(tempDiv.textContent || tempDiv.innerText || "");
           }
         } catch (e: any) {
           console.error("Error fetching passages in daily-reading:", e);
@@ -340,40 +499,18 @@ export function DailyReading() {
     fetchContent();
   }, [reading, version]);
 
+  // --- AUDIO GENERATION via API Routes ---
   const handleAudioGeneration = useCallback(async (text: string): Promise<TTSOutput | null> => {
     if (!text) return null;
     setIsAudioLoading(true);
     setAudioProgress("Iniciando...");
     setError(null);
     try {
-      const prep = await prepareTTS(text);
-      if (prep.status === 'cached' && prep.audio) {
-        return { audio: prep.audio };
-      }
-
-      if (prep.status === 'needs_generation' && prep.chunks && prep.chunks.length > 0) {
-        const total = prep.chunks.length;
-        const pcmParts: string[] = [];
-
-        for (let i = 0; i < total; i++) {
-          setAudioProgress(`Generando ${i + 1}/${total}...`);
-          if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-          const chunkRes = await generateTTSChunk(prep.chunks[i], i, total);
-          pcmParts.push(chunkRes.pcmBase64);
-        }
-
-        setAudioProgress("Guardando...");
-        const finalRes = await finalizeTTS(text, pcmParts);
-        return { audio: finalRes.audio };
-      }
-
-      setError("No se pudo iniciar la generación del audio.");
-      return null;
+      const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
+      return result;
     } catch (e: any) {
       const errorMessage = e.message || 'Error generando audio.';
-      if (typeof errorMessage === 'string' && errorMessage.includes('429')) {
+      if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('cuota') || errorMessage.includes('límite'))) {
         setError("Se ha excedido el límite de solicitudes de audio. Por favor, inténtalo de nuevo en un minuto.");
       } else {
         setError(errorMessage);
@@ -592,7 +729,7 @@ export function DailyReading() {
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error al cargar la lectura</AlertTitle>
+                <AlertTitle>Error</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -746,5 +883,4 @@ export function DailyReading() {
     </div>
   );
 }
-
     
