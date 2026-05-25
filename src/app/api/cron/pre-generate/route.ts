@@ -31,27 +31,36 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No hay lectura asignada para hoy.' });
     }
 
-    // Por ahora pre-generamos la versión por defecto (RVR09)
-    const defaultVersion = bibleVersions.find(v => v.abbreviation === 'RVR09')?.id || bibleVersions[0].id;
-    
-    const result = await getPassagesText(reading.passages, defaultVersion);
-    
-    if (typeof result === 'string') {
-      // Limpiar HTML para convertirlo en texto plano para el TTS
-      const plainText = result
-        .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, '') // Eliminar etiquetas de versículo (span class="v") y su contenido
-        .replace(/<h3>/g, '\n\n')
-        .replace(/<\/h3>/g, '\n')
-        .replace(/<[^>]*>?/gm, '') // Eliminar el resto de etiquetas HTML
-        .trim();
+    // Pre-generar todas las versiones en español principales
+    const targetVersions = bibleVersions.filter(v => 
+      ['RVR09', 'PDT', 'SSE', 'VBL'].includes(v.abbreviation)
+    );
 
-      if (plainText) {
-        console.log(`Cron Job: Generando audio para "${reading.passages.join(', ')}"...`);
-        // La función textToSpeech ya tiene la lógica de cachear en Firebase
-        await textToSpeech({ text: plainText });
-        console.log(`Cron Job: Pre-generación completada con éxito.`);
-      }
-    }
+    console.log(`Cron Job: Iniciando pre-generación para ${targetVersions.length} versiones en español (${targetVersions.map(v => v.abbreviation).join(', ')})...`);
+
+    await Promise.all(
+      targetVersions.map(async (version) => {
+        try {
+          const result = await getPassagesText(reading.passages, version.id);
+          if (typeof result === 'string') {
+            const plainText = result
+              .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, '')
+              .replace(/<h3>/g, '\n\n')
+              .replace(/<\/h3>/g, '\n')
+              .replace(/<[^>]*>?/gm, '')
+              .trim();
+
+            if (plainText) {
+              console.log(`Cron Job: Generando audio para versión ${version.abbreviation}...`);
+              await textToSpeech({ text: plainText });
+              console.log(`Cron Job: Éxito pre-generación versión ${version.abbreviation}.`);
+            }
+          }
+        } catch (versionError: any) {
+          console.error(`Cron Job: Error en versión ${version.abbreviation}:`, versionError.message || versionError);
+        }
+      })
+    );
 
     return NextResponse.json({ 
       success: true, 

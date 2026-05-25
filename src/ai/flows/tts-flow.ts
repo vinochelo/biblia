@@ -1,6 +1,8 @@
 'use server';
 
 import { ai } from '@/ai/genkit';
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
 import { z } from 'zod';
 import wav from 'wav';
 import { getCachedAudio, cacheAudio } from '@/lib/audio-cache';
@@ -15,8 +17,8 @@ const TTSOutputSchema = z.object({
 });
 export type TTSOutput = z.infer<typeof TTSOutputSchema>;
 
-const MAX_CHUNK_LENGTH = 2000;
-const TTS_MODEL = 'googleai/gemini-2.5-flash-preview-tts';
+const MAX_CHUNK_LENGTH = 4000;
+const TTS_MODEL = 'googleai/gemini-3.1-flash-tts-preview';
 const TTS_VOICE = 'Fenrir';
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
@@ -188,13 +190,15 @@ async function generateSingleChunk(
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const nextKey = getNextApiKey();
-      if (nextKey) {
-        process.env.GEMINI_API_KEY = nextKey;
-        const keys = getApiKeys();
-        console.log(`TTS (Gemini): Usando API Key #${((currentKeyIndex - 1) % keys.length) + 1}/${keys.length}`);
-      }
+      const keys = getApiKeys();
+      const keyIndex = nextKey ? keys.indexOf(nextKey) : -1;
+      console.log(`TTS (Gemini): Fragmento ${chunkIndex + 1}/${totalChunks} (intento ${attempt}) usando API Key #${keyIndex >= 0 ? keyIndex + 1 : 'default'}/${keys.length}`);
 
-      const result = await ai.generate({
+      const chunkAi = genkit({
+        plugins: [googleAI({ apiKey: nextKey })],
+      });
+
+      const result = await chunkAi.generate({
         model: TTS_MODEL,
         config: {
           responseModalities: ['AUDIO'],
@@ -263,27 +267,20 @@ const ttsFlow = ai.defineFlow(
     }
 
     const chunks = splitTextIntoChunks(normalizedText);
-    console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres) - Procesando secuencialmente`);
+    console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres) - Procesando en paralelo con escalonamiento de 2s`);
 
-    const pcmBuffers: Buffer[] = [];
-    const hasMultipleKeys = getApiKeys().length > 1;
-
-    for (let i = 0; i < chunks.length; i++) {
-      if (i > 0) {
-        // Si hay múltiples API Keys rotando, el delay puede ser menor (100ms)
-        // Si hay una sola key, esperamos INTER_CHUNK_DELAY_MS (1000ms)
-        const delayMs = hasMultipleKeys ? 100 : INTER_CHUNK_DELAY_MS;
-        console.log(`TTS (Gemini): Esperando ${delayMs}ms antes del fragmento ${i + 1}/${chunks.length}`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-
-      const pcmBuffer = await generateSingleChunk(chunks[i], i, chunks.length);
-      pcmBuffers.push(pcmBuffer);
-    }
+    const pcmBuffers = await Promise.all(
+      chunks.map(async (chunk, index) => {
+        if (index > 0) {
+          await new Promise(resolve => setTimeout(resolve, index * 2000));
+        }
+        return generateSingleChunk(chunk, index, chunks.length);
+      })
+    );
 
     // Concatenar todos los buffers PCM puros
     const combinedPcmBuffer = Buffer.concat(pcmBuffers);
-    
+
     // Convertir a WAV
     const wavBase64 = await toWav(combinedPcmBuffer);
     
