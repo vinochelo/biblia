@@ -165,7 +165,7 @@ async function handleGenerateChunk(body: any) {
       break;
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      const is429 = errorMsg.includes("429") || errorMsg.toLowerCase().includes("quota");
+      const is429 = errorMsg.includes("429") || errorMsg.toLowerCase().includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("Resource has been exhausted");
       console.warn(`TTS chunk ${chunkIndex + 1}/${totalChunks} (intento ${attempt}): ${errorMsg.substring(0, 200)}`);
 
       if (attempt === MAX_RETRIES) {

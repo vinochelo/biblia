@@ -195,6 +195,7 @@ export function DailyReading() {
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [audioProgress, setAudioProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [today, setToday] = useState(new Date());
 
   const { isCompleted, toggleComplete } = useStudyProgress();
@@ -398,7 +399,7 @@ export function DailyReading() {
                 utterance.onstart = () => {
                     setIsBrowserSpeaking(true);
                     setIsBrowserPaused(false);
-                    setError(null);
+                    setAudioError(null);
                 };
             }
             
@@ -415,7 +416,7 @@ export function DailyReading() {
                 setIsBrowserPaused(false);
                 // Ignore interruption errors which happen naturally on stop/pause
                 if (e.error !== 'interrupted' && e.error !== 'canceled') {
-                   setError(`Error de la voz del navegador: ${e.error}`);
+                   setAudioError(`Error de la voz del navegador: ${e.error}`);
                 }
             };
             
@@ -499,21 +500,29 @@ export function DailyReading() {
     fetchContent();
   }, [reading, version]);
 
+  // Auto-dismiss audio errors after 8 seconds
+  useEffect(() => {
+    if (audioError) {
+      const timer = setTimeout(() => setAudioError(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [audioError]);
+
   // --- AUDIO GENERATION via API Routes ---
   const handleAudioGeneration = useCallback(async (text: string): Promise<TTSOutput | null> => {
     if (!text) return null;
     setIsAudioLoading(true);
     setAudioProgress("Iniciando...");
-    setError(null);
+    setAudioError(null);
     try {
       const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
       return result;
     } catch (e: any) {
       const errorMessage = e.message || 'Error generando audio.';
-      if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('cuota') || errorMessage.includes('límite'))) {
-        setError("Se ha excedido el límite de solicitudes de audio. Por favor, inténtalo de nuevo en un minuto.");
+      if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('cuota') || errorMessage.includes('límite') || errorMessage.includes('Resource has been exhausted'))) {
+        setAudioError("Se agotó la cuota diaria del Audio IA. Usa \"Leer con Navegador\" como alternativa.");
       } else {
-        setError(errorMessage);
+        setAudioError(`Audio IA: ${errorMessage}. Puedes usar "Leer con Navegador" mientras tanto.`);
       }
       return null;
     } finally {
@@ -729,9 +738,18 @@ export function DailyReading() {
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
+                <AlertTitle>Error al cargar la lectura</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
+            )}
+            {audioError && !error && (
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <p>{audioError}</p>
+                </div>
+                <Button variant="ghost" size="sm" className="shrink-0 h-6 px-2 text-xs" onClick={() => setAudioError(null)}>✕</Button>
+              </div>
             )}
             {!isTextLoading && htmlContent && (
               <div className="space-y-4">
