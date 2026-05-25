@@ -16,7 +16,7 @@ const TTSOutputSchema = z.object({
 export type TTSOutput = z.infer<typeof TTSOutputSchema>;
 
 const MAX_CHUNK_LENGTH = 2000;
-const TTS_MODEL = 'googleai/gemini-2.5-flash';
+const TTS_MODEL = 'googleai/gemini-2.5-flash-preview-tts';
 const TTS_VOICE = 'Fenrir';
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
