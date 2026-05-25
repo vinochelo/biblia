@@ -210,6 +210,9 @@ async function generateSingleChunk(
         },
         prompt: chunk,
       });
+      if (!result.media?.url) {
+        throw new Error("La API no retornó la URL del contenido de audio (posible respuesta vacía o bloqueo de seguridad transitorio).");
+      }
       media = result.media;
       break;
     } catch (error: unknown) {
