@@ -7,8 +7,9 @@ import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { Loader2, BookOpen, Speaker } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { textToSpeech, prepareTTS, generateTTSChunk, finalizeTTS, type TTSOutput } from "@/ai/flows/tts-flow";
+import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
+import { AlertCircle } from "lucide-react";
 import { trackAiApiCall } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { defineTerm } from "@/ai/flows/dictionary-flow";
@@ -16,6 +17,101 @@ import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+
+async function generateAudioViaApi(
+  text: string,
+  onProgress: (msg: string) => void
+): Promise<TTSOutput | null> {
+  // Step 1: Check cache
+  onProgress("Verificando caché...");
+  const checkRes = await fetch("/api/tts?action=check-cache", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!checkRes.ok) {
+    const err = await checkRes.json().catch(() => ({ error: "Error verificando caché" }));
+    throw new Error(err.error || "Error verificando caché");
+  }
+  const checkData = await checkRes.json();
+
+  if (checkData.status === "cached" && checkData.audio) {
+    return { audio: checkData.audio };
+  }
+
+  // Step 2: Generate each chunk individually
+  const chunks: string[] = checkData.chunks || [];
+  if (chunks.length === 0) throw new Error("No se encontraron fragmentos para generar");
+
+  const pcmParts: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress(`Generando ${i + 1}/${chunks.length}...`);
+
+    let chunkSuccess = false;
+    for (let retry = 0; retry < 3; retry++) {
+      try {
+        const chunkRes = await fetch("/api/tts?action=generate-chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chunkText: chunks[i],
+            chunkIndex: i,
+            totalChunks: chunks.length,
+          }),
+        });
+
+        if (chunkRes.status === 429) {
+          // Rate limited, wait and retry
+          onProgress(`Límite de API, esperando... (${i + 1}/${chunks.length})`);
+          await new Promise((r) => setTimeout(r, 5000 * (retry + 1)));
+          continue;
+        }
+
+        if (!chunkRes.ok) {
+          const errData = await chunkRes.json().catch(() => ({ error: "Error generando chunk" }));
+          if (errData.retryable && retry < 2) {
+            await new Promise((r) => setTimeout(r, 3000 * (retry + 1)));
+            continue;
+          }
+          throw new Error(errData.error || "Error generando audio");
+        }
+
+        const chunkData = await chunkRes.json();
+        pcmParts.push(chunkData.pcmBase64);
+        chunkSuccess = true;
+        break;
+      } catch (e: any) {
+        if (retry === 2) throw e;
+        await new Promise((r) => setTimeout(r, 2000 * (retry + 1)));
+      }
+    }
+
+    if (!chunkSuccess) {
+      throw new Error(`Falló la generación del fragmento ${i + 1}`);
+    }
+
+    // Small delay between chunks
+    if (i < chunks.length - 1) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  // Step 3: Finalize - combine and cache
+  onProgress("Guardando...");
+  const finalRes = await fetch("/api/tts?action=finalize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, pcmParts }),
+  });
+
+  if (!finalRes.ok) {
+    const errData = await finalRes.json().catch(() => ({ error: "Error finalizando audio" }));
+    throw new Error(errData.error || "Error guardando audio");
+  }
+
+  const finalData = await finalRes.json();
+  return { audio: finalData.audio };
+}
 
 function DailyReadingPageContent() {
     const searchParams = useSearchParams();
@@ -30,6 +126,15 @@ function DailyReadingPageContent() {
     const [isAudioLoading, setIsAudioLoading] = useState(false);
     const [audioProgress, setAudioProgress] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [audioError, setAudioError] = useState<string | null>(null);
+
+    // Auto-dismiss audio errors after 8 seconds
+    useEffect(() => {
+        if (audioError) {
+            const timer = setTimeout(() => setAudioError(null), 8000);
+            return () => clearTimeout(timer);
+        }
+    }, [audioError]);
 
     // Dictionary state
     const contentRef = useRef<HTMLDivElement>(null);
@@ -94,39 +199,16 @@ function DailyReadingPageContent() {
         if (!text) return null;
         setIsAudioLoading(true);
         setAudioProgress("Iniciando...");
-        setError(null);
+        setAudioError(null);
         try {
-            const prep = await prepareTTS(text);
-            if (prep.status === 'cached' && prep.audio) {
-                return { audio: prep.audio };
-            }
-
-            if (prep.status === 'needs_generation' && prep.chunks && prep.chunks.length > 0) {
-                const total = prep.chunks.length;
-                const pcmParts: string[] = [];
-
-                for (let i = 0; i < total; i++) {
-                    setAudioProgress(`Generando ${i + 1}/${total}...`);
-                    if (i > 0) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                    const chunkRes = await generateTTSChunk(prep.chunks[i], i, total);
-                    pcmParts.push(chunkRes.pcmBase64);
-                }
-
-                setAudioProgress("Guardando...");
-                const finalRes = await finalizeTTS(text, pcmParts);
-                return { audio: finalRes.audio };
-            }
-
-            setError("No se pudo iniciar la generación del audio.");
-            return null;
+            const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
+            return result;
         } catch (e: any) {
             const errorMessage = e.message || 'Error generando audio.';
-            if (typeof errorMessage === 'string' && errorMessage.includes('429')) {
-                setError("Se ha excedido el límite de solicitudes de audio. Por favor, inténtalo de nuevo en un minuto.");
+            if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('cuota') || errorMessage.includes('límite') || errorMessage.includes('Resource has been exhausted'))) {
+                setAudioError("Se agotó la cuota diaria del Audio IA. Puedes usar el lector del sistema o intentarlo más tarde.");
             } else {
-                 setError(errorMessage);
+                setAudioError(`Audio IA: ${errorMessage}`);
             }
             return null;
         } finally {
@@ -220,6 +302,16 @@ const selection = window.getSelection();
                         <AlertTitle>Error</AlertTitle>
                         <AlertDescription>{error}</AlertDescription>
                     </Alert>
+                )}
+
+                {audioError && !error && (
+                    <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+                        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                            <p>{audioError}</p>
+                        </div>
+                        <Button variant="ghost" size="sm" className="shrink-0 h-6 px-2 text-xs" onClick={() => setAudioError(null)}>✕</Button>
+                    </div>
                 )}
 
                 {!isTextLoading && htmlContent && (
