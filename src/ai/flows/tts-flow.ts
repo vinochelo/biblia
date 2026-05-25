@@ -5,7 +5,7 @@ import { genkit } from 'genkit';
 import { googleAI } from '@genkit-ai/google-genai';
 import { z } from 'zod';
 import wav from 'wav';
-import { getCachedAudio, cacheAudio } from '@/lib/audio-cache';
+import { getCachedAudio, cacheAudio, getCacheKey } from '@/lib/audio-cache';
 
 const TTSInputSchema = z.object({
   text: z.string().describe('The text to convert to speech.'),
@@ -298,3 +298,50 @@ const ttsFlow = ai.defineFlow(
     };
   }
 );
+
+export async function prepareTTS(text: string): Promise<{
+  status: 'cached' | 'needs_generation';
+  audio?: string;
+  cacheKey?: string;
+  chunks?: string[];
+}> {
+  const normalizedText = normalizeTextForTTS(text);
+  if (!normalizedText) {
+    throw new Error('El texto está vacío.');
+  }
+
+  const cacheKey = getCacheKey(normalizedText, TTS_VOICE);
+  const cachedUrl = await getCachedAudio(normalizedText, TTS_VOICE);
+  if (cachedUrl) {
+    return { status: 'cached', audio: cachedUrl };
+  }
+
+  const chunks = splitTextIntoChunks(normalizedText);
+  return {
+    status: 'needs_generation',
+    cacheKey,
+    chunks,
+  };
+}
+
+export async function generateTTSChunk(
+  chunkText: string,
+  chunkIndex: number,
+  totalChunks: number
+): Promise<{ pcmBase64: string }> {
+  const pcmBuffer = await generateSingleChunk(chunkText, chunkIndex, totalChunks);
+  return { pcmBase64: pcmBuffer.toString('base64') };
+}
+
+export async function finalizeTTS(
+  text: string,
+  pcmBase64Array: string[]
+): Promise<{ audio: string }> {
+  const normalizedText = normalizeTextForTTS(text);
+  const pcmBuffers = pcmBase64Array.map(base64 => Buffer.from(base64, 'base64'));
+  const combinedPcmBuffer = Buffer.concat(pcmBuffers);
+  const wavBase64 = await toWav(combinedPcmBuffer);
+  const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, wavBase64);
+  return { audio: downloadUrl };
+}
+

@@ -27,7 +27,7 @@ function ensureCloudinaryConfig(): boolean {
   }
 }
 
-function getCacheKey(text: string, voice: string): string {
+export function getCacheKey(text: string, voice: string): string {
   return crypto.createHash('sha256').update(`${voice}:${text}`).digest('hex').substring(0, 32);
 }
 

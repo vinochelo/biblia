@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
-import { textToSpeech, type TTSOutput } from "@/ai/flows/tts-flow";
+import { textToSpeech, prepareTTS, generateTTSChunk, finalizeTTS, type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall } from "@/lib/utils";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,6 +47,7 @@ export function DailyReading() {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isTextLoading, setIsTextLoading] = useState(true);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [audioProgress, setAudioProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [today, setToday] = useState(new Date());
 
@@ -342,15 +343,34 @@ export function DailyReading() {
   const handleAudioGeneration = useCallback(async (text: string): Promise<TTSOutput | null> => {
     if (!text) return null;
     setIsAudioLoading(true);
+    setAudioProgress("Iniciando...");
     setError(null);
     try {
-      const result = await textToSpeech({ text });
-      if (result?.audio) {
-        return result;
-      } else {
-        setError("No se pudo generar el audio.");
-        return null;
+      const prep = await prepareTTS(text);
+      if (prep.status === 'cached' && prep.audio) {
+        return { audio: prep.audio };
       }
+
+      if (prep.status === 'needs_generation' && prep.chunks && prep.chunks.length > 0) {
+        const total = prep.chunks.length;
+        const pcmParts: string[] = [];
+
+        for (let i = 0; i < total; i++) {
+          setAudioProgress(`Generando ${i + 1}/${total}...`);
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          const chunkRes = await generateTTSChunk(prep.chunks[i], i, total);
+          pcmParts.push(chunkRes.pcmBase64);
+        }
+
+        setAudioProgress("Guardando...");
+        const finalRes = await finalizeTTS(text, pcmParts);
+        return { audio: finalRes.audio };
+      }
+
+      setError("No se pudo iniciar la generación del audio.");
+      return null;
     } catch (e: any) {
       const errorMessage = e.message || 'Error generando audio.';
       if (typeof errorMessage === 'string' && errorMessage.includes('429')) {
@@ -361,6 +381,7 @@ export function DailyReading() {
       return null;
     } finally {
       setIsAudioLoading(false);
+      setAudioProgress(null);
     }
   }, []);
 
@@ -587,7 +608,7 @@ export function DailyReading() {
                             onPlay={() => trackAiApiCall('tts')}
                             isLoading={isAudioLoading}
                         />
-                         <span className="text-xs md:text-sm font-medium text-muted-foreground hidden sm:inline">{isAudioLoading ? "Generando..." : "Audio IA"}</span>
+                         <span className="text-xs md:text-sm font-medium text-muted-foreground hidden sm:inline">{isAudioLoading ? (audioProgress || "Generando...") : "Audio IA"}</span>
                     </div>
 
                     {/* Browser TTS */}
