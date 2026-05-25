@@ -11,6 +11,9 @@
     },
     "src/app/plan/read/page.tsx": {
       "maxDuration": 60
+    },
+    "src/app/page.tsx": {
+      "maxDuration": 60
     }
   }
 }
