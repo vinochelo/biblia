@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { genkit } from "genkit";
 import { googleAI } from "@genkit-ai/google-genai";
-import wav from "wav";
 import { getCachedAudio, cacheAudio, getCacheKey } from "@/lib/audio-cache";
 
 const MAX_CHUNK_LENGTH = 1500;
@@ -84,21 +83,32 @@ function extractPcmFromDataUri(dataUri: string): Buffer {
   return decodedBuffer;
 }
 
+function pcmToWav(pcmBuffer: Buffer, sampleRate: number = 24000, numChannels: number = 1, bitDepth: number = 16): Buffer {
+  const header = Buffer.alloc(44);
+  
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcmBuffer.length, 4);
+  header.write("WAVE", 8);
+  
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * numChannels * (bitDepth / 8), 28);
+  header.writeUInt16LE(numChannels * (bitDepth / 8), 32);
+  header.writeUInt16LE(bitDepth, 34);
+  
+  header.write("data", 36);
+  header.writeUInt32LE(pcmBuffer.length, 40);
+  
+  return Buffer.concat([header, pcmBuffer]);
+}
+
 async function toWav(pcmData: Buffer): Promise<string> {
   if (pcmData.length === 0) throw new Error("PCM buffer vacío");
-  return new Promise((resolve, reject) => {
-    const writer = new wav.Writer({
-      channels: TTS_CHANNELS,
-      sampleRate: TTS_SAMPLE_RATE,
-      bitDepth: TTS_SAMPLE_WIDTH * 8,
-    });
-    const bufs: Buffer[] = [];
-    writer.on("error", reject);
-    writer.on("data", (d: Buffer) => bufs.push(d));
-    writer.on("end", () => resolve(Buffer.concat(bufs).toString("base64")));
-    writer.write(pcmData);
-    writer.end();
-  });
+  const wavBuffer = pcmToWav(pcmData, TTS_SAMPLE_RATE, TTS_CHANNELS, TTS_SAMPLE_WIDTH * 8);
+  return wavBuffer.toString("base64");
 }
 
 /**
