@@ -4,7 +4,7 @@ import { googleAI } from "@genkit-ai/google-genai";
 import wav from "wav";
 import { getCachedAudio, cacheAudio, getCacheKey } from "@/lib/audio-cache";
 
-const MAX_CHUNK_LENGTH = 4000;
+const MAX_CHUNK_LENGTH = 1500;
 const TTS_MODEL = "googleai/gemini-3.1-flash-tts-preview";
 const TTS_VOICE = "Fenrir";
 const TTS_SAMPLE_RATE = 24000;
@@ -20,14 +20,11 @@ function getApiKeys(): string[] {
   return envKeys.split(",").map((k) => k.trim()).filter((k) => k.length > 0);
 }
 
-let currentKeyIndex = 0;
-
 function getNextApiKey(): string | undefined {
   const apiKeys = getApiKeys();
   if (apiKeys.length === 0) return undefined;
-  const key = apiKeys[currentKeyIndex % apiKeys.length];
-  currentKeyIndex++;
-  return key;
+  const randomIndex = Math.floor(Math.random() * apiKeys.length);
+  return apiKeys[randomIndex];
 }
 
 function normalizeTextForTTS(text: string): string {
@@ -116,11 +113,52 @@ async function handleCheckCache(body: any) {
   const normalizedText = normalizeTextForTTS(text);
   if (!normalizedText) return NextResponse.json({ error: "Texto vacío" }, { status: 400 });
 
+  // 1. Check if already cached
   const cachedUrl = await getCachedAudio(normalizedText, TTS_VOICE);
   if (cachedUrl) {
     return NextResponse.json({ status: "cached", audio: cachedUrl });
   }
 
+  // 2. Try ElevenLabs premium generation for the whole text in one call
+  const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+  if (elevenLabsApiKey) {
+    try {
+      const voiceId = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL"; // Sarah prebuilt
+      console.log(`TTS API: Intentando generación premium completa con ElevenLabs (voz: ${voiceId})...`);
+      
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": elevenLabsApiKey
+        },
+        body: JSON.stringify({
+          text: normalizedText,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.75,
+            similarity_boost: 0.85
+          }
+        })
+      });
+
+      if (response.ok) {
+        const audioBuffer = await response.arrayBuffer();
+        const mp3Base64 = Buffer.from(audioBuffer).toString("base64");
+        console.log("TTS API: Generación ElevenLabs exitosa. Guardando en caché...");
+        
+        const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
+        return NextResponse.json({ status: "cached", audio: downloadUrl });
+      } else {
+        const errText = await response.text();
+        console.warn(`TTS API: ElevenLabs no disponible (status: ${response.status}). Usando fallback de Gemini...`);
+      }
+    } catch (e) {
+      console.error("TTS API: Error llamando a ElevenLabs, usando fallback de Gemini...", e);
+    }
+  }
+
+  // 3. Fallback: Split text and return chunks for Gemini generation
   const chunks = splitTextIntoChunks(normalizedText);
   return NextResponse.json({ status: "needs_generation", chunks });
 }

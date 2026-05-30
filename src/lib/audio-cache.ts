@@ -67,8 +67,15 @@ export async function getCachedAudio(text: string, voice: string): Promise<strin
 
 export async function cacheAudio(text: string, voice: string, wavBase64: string): Promise<string> {
   const wavBuffer = Buffer.from(wavBase64, 'base64');
+  
+  // Detect if buffer is MP3 or WAV
+  // MP3 usually starts with ID3 (0x49 0x44 0x33) or frame sync (0xFF 0xFB or 0xFF 0xF3)
+  const isMp3 = (wavBuffer[0] === 0x49 && wavBuffer[1] === 0x44 && wavBuffer[2] === 0x33) ||
+                (wavBuffer[0] === 0xFF && (wavBuffer[1] === 0xFB || wavBuffer[1] === 0xF3));
+  const mimeType = isMp3 ? 'audio/mpeg' : 'audio/wav';
+  const formatExt = isMp3 ? 'mp3' : 'wav';
   const sizeMB = (wavBuffer.length / (1024 * 1024)).toFixed(1);
-  console.log(`TTS Cache: Tamaño del audio WAV: ${sizeMB} MB`);
+  console.log(`TTS Cache: Detectado formato ${formatExt.toUpperCase()} (MIME: ${mimeType}), tamaño: ${sizeMB} MB`);
 
   if (!ensureCloudinaryConfig()) {
     if (wavBuffer.length > 3 * 1024 * 1024) {
@@ -76,7 +83,7 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
       throw new Error("Audio generado es demasiado grande para servir sin Cloudinary. Configure las credenciales de Cloudinary.");
     }
     console.warn("TTS Cache: Retornando data URI local (sin Cloudinary).");
-    return `data:audio/wav;base64,${wavBase64}`;
+    return `data:${mimeType};base64,${wavBase64}`;
   }
 
   const key = getCacheKey(text, voice);
@@ -90,7 +97,7 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
       console.log(`TTS Cache: Subiendo y comprimiendo a MP3 en Cloudinary... (intento ${attempt}/${MAX_UPLOAD_RETRIES}, timeout: ${UPLOAD_TIMEOUT_MS / 1000}s)`);
 
       const uploadPromise = cloudinary.uploader.upload(
-        `data:audio/wav;base64,${wavBase64}`,
+        `data:${mimeType};base64,${wavBase64}`,
         {
           resource_type: "video",
           public_id: `bible_audio/${key}`,
