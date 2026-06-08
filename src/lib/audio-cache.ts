@@ -4,7 +4,7 @@ import { v2 as cloudinary } from 'cloudinary';
 
 let cloudinaryInitialized = false;
 
-function ensureCloudinaryConfig(): boolean {
+export function ensureCloudinaryConfig(): boolean {
   if (cloudinaryInitialized) return true;
 
   const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
@@ -26,6 +26,8 @@ function ensureCloudinaryConfig(): boolean {
     return false;
   }
 }
+
+export { cloudinary };
 
 export function getCacheKey(text: string, voice: string): string {
   return crypto.createHash('sha256').update(`${voice}:${text}`).digest('hex').substring(0, 32);

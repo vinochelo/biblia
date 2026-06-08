@@ -7,7 +7,7 @@ import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
 import { Loader2, BookOpen, Speaker } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { type TTSOutput } from "@/ai/flows/tts-flow";
+import { type TTSOutput, prepareTTS, generateTTSChunk, finalizeTTS } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { AlertCircle } from "lucide-react";
 import { trackAiApiCall } from "@/lib/utils";
@@ -24,16 +24,7 @@ async function generateAudioViaApi(
 ): Promise<TTSOutput | null> {
   // Step 1: Check cache
   onProgress("Verificando caché...");
-  const checkRes = await fetch("/api/tts?action=check-cache", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!checkRes.ok) {
-    const err = await checkRes.json().catch(() => ({ error: "Error verificando caché" }));
-    throw new Error(err.error || "Error verificando caché");
-  }
-  const checkData = await checkRes.json();
+  const checkData = await prepareTTS(text);
 
   if (checkData.status === "cached" && checkData.audio) {
     return { audio: checkData.audio };
@@ -41,53 +32,17 @@ async function generateAudioViaApi(
 
   // Step 2: Generate each chunk individually
   const chunks: string[] = checkData.chunks || [];
-  if (chunks.length === 0) throw new Error("No se encontraron fragmentos para generar");
+  const sessionId = checkData.sessionId;
+  if (chunks.length === 0 || !sessionId) {
+    throw new Error("No se encontraron fragmentos para generar");
+  }
 
-  const pcmParts: string[] = [];
   for (let i = 0; i < chunks.length; i++) {
     onProgress(`Generando ${i + 1}/${chunks.length}...`);
-
-    let chunkSuccess = false;
-    for (let retry = 0; retry < 3; retry++) {
-      try {
-        const chunkRes = await fetch("/api/tts?action=generate-chunk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chunkText: chunks[i],
-            chunkIndex: i,
-            totalChunks: chunks.length,
-          }),
-        });
-
-        if (chunkRes.status === 429) {
-          // Rate limited, wait and retry
-          onProgress(`Límite de API, esperando... (${i + 1}/${chunks.length})`);
-          await new Promise((r) => setTimeout(r, 5000 * (retry + 1)));
-          continue;
-        }
-
-        if (!chunkRes.ok) {
-          const errData = await chunkRes.json().catch(() => ({ error: "Error generando chunk" }));
-          if (errData.retryable && retry < 2) {
-            await new Promise((r) => setTimeout(r, 3000 * (retry + 1)));
-            continue;
-          }
-          throw new Error(errData.error || "Error generando audio");
-        }
-
-        const chunkData = await chunkRes.json();
-        pcmParts.push(chunkData.pcmBase64);
-        chunkSuccess = true;
-        break;
-      } catch (e: any) {
-        if (retry === 2) throw e;
-        await new Promise((r) => setTimeout(r, 2000 * (retry + 1)));
-      }
-    }
-
-    if (!chunkSuccess) {
-      throw new Error(`Falló la generación del fragmento ${i + 1}`);
+    try {
+      await generateTTSChunk(sessionId, chunks[i], i, chunks.length);
+    } catch (e: any) {
+      throw new Error(`Fragmento ${i + 1} falló: ${e.message || e}`);
     }
 
     // Small delay between chunks
@@ -98,19 +53,12 @@ async function generateAudioViaApi(
 
   // Step 3: Finalize - combine and cache
   onProgress("Guardando...");
-  const finalRes = await fetch("/api/tts?action=finalize", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, pcmParts }),
-  });
-
-  if (!finalRes.ok) {
-    const errData = await finalRes.json().catch(() => ({ error: "Error finalizando audio" }));
-    throw new Error(errData.error || "Error guardando audio");
+  try {
+    const finalData = await finalizeTTS(sessionId, text, chunks.length);
+    return { audio: finalData.audio };
+  } catch (e: any) {
+    throw new Error(e.message || "Error guardando audio");
   }
-
-  const finalData = await finalRes.json();
-  return { audio: finalData.audio };
 }
 
 function DailyReadingPageContent() {

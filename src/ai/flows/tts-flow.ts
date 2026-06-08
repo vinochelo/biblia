@@ -4,7 +4,7 @@ import { ai } from '@/ai/genkit';
 import { genkit } from 'genkit';
 import { googleAI } from '@genkit-ai/google-genai';
 import { z } from 'zod';
-import { getCachedAudio, cacheAudio, getCacheKey } from '@/lib/audio-cache';
+import { getCachedAudio, cacheAudio, getCacheKey, cloudinary, ensureCloudinaryConfig } from '@/lib/audio-cache';
 
 const TTSInputSchema = z.object({
   text: z.string().describe('The text to convert to speech.'),
@@ -349,6 +349,7 @@ export async function prepareTTS(text: string): Promise<{
   status: 'cached' | 'needs_generation';
   audio?: string;
   cacheKey?: string;
+  sessionId?: string;
   chunks?: string[];
 }> {
   const normalizedText = normalizeTextForTTS(text);
@@ -366,28 +367,103 @@ export async function prepareTTS(text: string): Promise<{
   return {
     status: 'needs_generation',
     cacheKey,
+    sessionId: cacheKey, // We use the cacheKey as the sessionId since it's unique and stable
     chunks,
   };
 }
 
 export async function generateTTSChunk(
+  sessionId: string,
   chunkText: string,
   chunkIndex: number,
   totalChunks: number
-): Promise<{ pcmBase64: string }> {
+): Promise<{ success: boolean; url?: string }> {
+  // 1. Generate single chunk (returns raw PCM Buffer)
   const pcmBuffer = await generateSingleChunk(chunkText, chunkIndex, totalChunks);
-  return { pcmBase64: pcmBuffer.toString('base64') };
+  
+  // 2. Convert raw PCM Buffer to WAV Buffer
+  const wavBuffer = pcmToWav(pcmBuffer, TTS_SAMPLE_RATE, TTS_CHANNELS, TTS_SAMPLE_WIDTH * 8);
+  const wavBase64 = wavBuffer.toString('base64');
+  
+  // 3. Upload chunk to Cloudinary
+  if (!ensureCloudinaryConfig()) {
+    throw new Error("Cloudinary credentials are not configured in environment variables.");
+  }
+  
+  const publicId = `bible_audio_chunks/${sessionId}/chunk_${chunkIndex}`;
+  console.log(`TTS Server Actions: Uploading chunk ${chunkIndex + 1}/${totalChunks} to Cloudinary under public ID: ${publicId}`);
+  
+  const uploadResponse = await cloudinary.uploader.upload(
+    `data:audio/wav;base64,${wavBase64}`,
+    {
+      resource_type: "video",
+      public_id: publicId,
+      overwrite: true,
+    }
+  );
+  
+  return { success: true, url: uploadResponse.secure_url };
 }
 
 export async function finalizeTTS(
+  sessionId: string,
   text: string,
-  pcmBase64Array: string[]
+  totalChunks: number
 ): Promise<{ audio: string }> {
   const normalizedText = normalizeTextForTTS(text);
-  const pcmBuffers = pcmBase64Array.map(base64 => Buffer.from(base64, 'base64'));
+  
+  const { CLOUDINARY_CLOUD_NAME } = process.env;
+  if (!CLOUDINARY_CLOUD_NAME) {
+    throw new Error("CLOUDINARY_CLOUD_NAME is not configured.");
+  }
+
+  const pcmBuffers: Buffer[] = [];
+  
+  // 1. Download all generated chunks and extract their PCM buffers
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/bible_audio_chunks/${sessionId}/chunk_${i}.wav`;
+    console.log(`TTS Server Actions: Downloading chunk ${i + 1}/${totalChunks} from ${chunkUrl}`);
+    
+    let downloadedBuffer: Buffer;
+    try {
+      const res = await fetch(chunkUrl);
+      if (!res.ok) {
+        throw new Error(`Failed to download chunk ${i} (status: ${res.status})`);
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      downloadedBuffer = Buffer.from(arrayBuffer);
+    } catch (err: any) {
+      throw new Error(`Error descargando fragmento ${i + 1}: ${err.message || err}`);
+    }
+    
+    const pcmData = extractPcmFromDataUri(`data:audio/wav;base64,${downloadedBuffer.toString('base64')}`);
+    pcmBuffers.push(pcmData);
+  }
+  
+  // 2. Concatenate PCM
   const combinedPcmBuffer = Buffer.concat(pcmBuffers);
+  
+  // 3. Convert to WAV
   const wavBase64 = await toWav(combinedPcmBuffer);
+  
+  // 4. Cache audio (uploads final WAV to Cloudinary and saves URL in Firebase RTDB)
   const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, wavBase64);
+  
+  // 5. Clean up temporary chunks asynchronously
+  const deletePromises = [];
+  for (let i = 0; i < totalChunks; i++) {
+    const publicId = `bible_audio_chunks/${sessionId}/chunk_${i}`;
+    deletePromises.push(
+      cloudinary.uploader.destroy(publicId, { resource_type: "video" })
+        .catch(err => console.error(`Failed to delete temporary chunk ${publicId}:`, err))
+    );
+  }
+  
+  // Do not block response for deletion
+  Promise.all(deletePromises).then(() => {
+    console.log(`TTS Server Actions: Cleaned up temporary chunks for session ${sessionId}`);
+  });
+  
   return { audio: downloadUrl };
 }
 
