@@ -1,6 +1,9 @@
 import { adminDb } from "./firebase-admin";
 import crypto from "crypto";
 import { v2 as cloudinary } from 'cloudinary';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 let cloudinaryInitialized = false;
 
@@ -95,15 +98,18 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+    const tempFilePath = path.join(os.tmpdir(), `bible_tts_${key}.${formatExt}`);
     try {
       console.log(`TTS Cache: Subiendo y comprimiendo a MP3 en Cloudinary... (intento ${attempt}/${MAX_UPLOAD_RETRIES}, timeout: ${UPLOAD_TIMEOUT_MS / 1000}s)`);
+      
+      // Write buffer to a temp file to bypass Cloudinary's 20MB data URI body parser limit
+      fs.writeFileSync(tempFilePath, wavBuffer);
 
       const uploadPromise = cloudinary.uploader.upload(
-        `data:${mimeType};base64,${wavBase64}`,
+        tempFilePath,
         {
           resource_type: "video",
           public_id: `bible_audio/${key}`,
-          format: "mp3",
           overwrite: true,
           timeout: UPLOAD_TIMEOUT_MS,
         }
@@ -115,7 +121,10 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
 
       const uploadResponse = await Promise.race([uploadPromise, timeoutPromise]);
 
-      const publicUrl = uploadResponse.secure_url;
+      let publicUrl = uploadResponse.secure_url;
+      if (formatExt === 'wav') {
+        publicUrl = publicUrl.replace(/\.wav$/, '.mp3');
+      }
 
       if (adminDb) {
         try {
@@ -127,6 +136,16 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
 
       const mp3SizeKB = uploadResponse.bytes ? (uploadResponse.bytes / 1024).toFixed(1) : '?';
       console.log(`TTS Cache: Audio subido exitosamente → ${publicUrl} (MP3: ${mp3SizeKB} KB, compresión: ${sizeMB} MB → ~${Math.round(parseInt(mp3SizeKB || '0') / 1024)} MB)`);
+      
+      // Clean up temp file
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      } catch (err) {
+        console.error("TTS Cache: Error deleting temp file after successful upload:", err);
+      }
+
       return publicUrl;
     } catch (error: unknown) {
       lastError = error;
@@ -141,6 +160,13 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
         errorMsg.includes('timeout');
 
       console.error(`TTS Cache: Error al subir a Cloudinary (intento ${attempt}/${MAX_UPLOAD_RETRIES}):`, errorMsg);
+
+      // Clean up temp file
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      } catch {}
 
       if (isRetryable && attempt < MAX_UPLOAD_RETRIES) {
         const delayMs = attempt * 5000;
