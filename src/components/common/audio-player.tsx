@@ -20,6 +20,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<boolean>(false);
 
+  // 1. Silent pre-fetch on text change: Check if audio is already cached in Cloudinary/Firebase
   useEffect(() => {
     setIsPlaying(false);
     setAudioSrc(null);
@@ -28,9 +29,24 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+      audioRef.current.removeAttribute('src');
     }
-  }, [text]);
+
+    if (text && fetcher) {
+      let isMounted = true;
+      fetcher(text).then((res) => {
+        if (isMounted && res?.audio) {
+          setAudioSrc(res.audio);
+        }
+      }).catch(() => {
+        // Ignorar errores en pre-fetch silencioso
+      });
+
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [text, fetcher]);
 
   const handlePlay = useCallback(() => {
     if (onPlay) {
@@ -51,14 +67,18 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     if (isParentLoading || isFetching) return;
 
     const el = audioRef.current;
+    if (!el) return;
 
-    // Case A: Audio URL already fetched
-    if (audioSrc && el) {
+    // Case A: Audio URL already available (Instant Play on touch for Android & iOS)
+    if (audioSrc) {
       if (isPlaying) {
         el.pause();
         setIsPlaying(false);
       } else {
         try {
+          if (el.src !== audioSrc) {
+            el.src = audioSrc;
+          }
           await el.play();
           setIsPlaying(true);
         } catch (e) {
@@ -69,10 +89,15 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       return;
     }
 
-    // Case B: Audio URL needs to be fetched
-    if (text && fetcher && !audioSrc) {
+    // Case B: Audio URL needs on-demand generation
+    if (text && fetcher) {
       abortRef.current = false;
       setIsFetching(true);
+
+      // Touch gesture priming for mobile browsers
+      try {
+        el.load();
+      } catch {}
 
       try {
         const result = await fetcher(text);
@@ -81,21 +106,16 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
         if (result?.audio) {
           setAudioSrc(result.audio);
+          el.src = result.audio;
+          el.load();
 
-          // Allow DOM to bind the src, then trigger playback
-          setTimeout(async () => {
-            if (audioRef.current && !abortRef.current) {
-              try {
-                audioRef.current.src = result.audio;
-                audioRef.current.load();
-                await audioRef.current.play();
-                setIsPlaying(true);
-              } catch (e) {
-                console.warn("Autoplay bloqueado por políticas de navegador móvil. Presione reproducir nuevamente.", e);
-                setIsPlaying(false);
-              }
-            }
-          }, 50);
+          try {
+            await el.play();
+            setIsPlaying(true);
+          } catch (e) {
+            console.warn("Autoplay bloqueado por políticas de navegador móvil. Presione reproducir de nuevo.", e);
+            setIsPlaying(false);
+          }
         }
       } catch (e) {
         if (!abortRef.current) {
@@ -134,7 +154,6 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     <div className="flex items-center gap-2">
       <audio
         ref={audioRef}
-        src={audioSrc || undefined}
         preload="metadata"
         onPlay={handlePlay}
         onPause={handlePause}
