@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -22,32 +21,14 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   const abortRef = useRef<boolean>(false);
 
   useEffect(() => {
-    return () => {
-      abortRef.current = true;
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.removeAttribute('src');
-        audioRef.current.load();
-        audioRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     setIsPlaying(false);
     setAudioSrc(null);
     setIsFetching(false);
-    abortRef.current = true;
+    abortRef.current = false;
 
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.removeAttribute('src');
-      audioRef.current.load();
-      audioRef.current = null;
-    }
-
-    if (text) {
-      abortRef.current = false;
+      audioRef.current.currentTime = 0;
     }
   }, [text]);
 
@@ -55,72 +36,66 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     if (onPlay) {
       onPlay();
     }
+    setIsPlaying(true);
   }, [onPlay]);
+
+  const handlePause = useCallback(() => {
+    setIsPlaying(false);
+  }, []);
+
+  const handleEnded = useCallback(() => {
+    setIsPlaying(false);
+  }, []);
 
   const handlePlayPause = useCallback(async () => {
     if (isParentLoading || isFetching) return;
 
-    if (audioRef.current && audioSrc) {
+    const el = audioRef.current;
+
+    // Case A: Audio URL already fetched
+    if (audioSrc && el) {
       if (isPlaying) {
-        audioRef.current.pause();
+        el.pause();
         setIsPlaying(false);
       } else {
         try {
-          await audioRef.current.play();
+          await el.play();
           setIsPlaying(true);
         } catch (e) {
-          console.error("Error reproduciendo audio:", e);
+          console.error("Error reproduciendo audio en dispositivo móvil:", e);
           setIsPlaying(false);
         }
       }
       return;
     }
 
+    // Case B: Audio URL needs to be fetched
     if (text && fetcher && !audioSrc) {
       abortRef.current = false;
       setIsFetching(true);
 
-      const newAudio = new Audio();
-      newAudio.crossOrigin = 'anonymous';
-      newAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-
-      try {
-        await newAudio.play().catch(() => {});
-      } catch {
-        // Ignorar error de audio silencioso
-      }
-
-      audioRef.current = newAudio;
-
       try {
         const result = await fetcher(text);
 
-        if (abortRef.current) {
-          return;
-        }
+        if (abortRef.current) return;
 
         if (result?.audio) {
           setAudioSrc(result.audio);
 
-          if (audioRef.current && !abortRef.current) {
-            audioRef.current.src = result.audio;
-            audioRef.current.onplay = handlePlay;
-            audioRef.current.onended = () => {
-              if (!abortRef.current) setIsPlaying(false);
-            };
-            audioRef.current.onerror = () => {
-              console.error('Error reproduciendo audio generado.');
-              if (!abortRef.current) setIsPlaying(false);
-            };
-
-            try {
-              await audioRef.current.play();
-              if (!abortRef.current) setIsPlaying(true);
-            } catch (e) {
-              console.error("Error iniciando reproducción:", e);
-              if (!abortRef.current) setIsPlaying(false);
+          // Allow DOM to bind the src, then trigger playback
+          setTimeout(async () => {
+            if (audioRef.current && !abortRef.current) {
+              try {
+                audioRef.current.src = result.audio;
+                audioRef.current.load();
+                await audioRef.current.play();
+                setIsPlaying(true);
+              } catch (e) {
+                console.warn("Autoplay bloqueado por políticas de navegador móvil. Presione reproducir nuevamente.", e);
+                setIsPlaying(false);
+              }
             }
-          }
+          }, 50);
         }
       } catch (e) {
         if (!abortRef.current) {
@@ -132,8 +107,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
         }
       }
     }
-  }, [isParentLoading, isFetching, audioSrc, isPlaying, text, fetcher, handlePlay]);
-
+  }, [isParentLoading, isFetching, audioSrc, isPlaying, text, fetcher]);
 
   const handleRewind = () => {
     if (audioRef.current) {
@@ -147,7 +121,6 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     }
   };
 
-
   const getIcon = () => {
     if (isParentLoading || isFetching) {
       return <Loader2 className="h-5 w-5 animate-spin" />;
@@ -159,6 +132,18 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
   return (
     <div className="flex items-center gap-2">
+      <audio
+        ref={audioRef}
+        src={audioSrc || undefined}
+        preload="metadata"
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onEnded={handleEnded}
+        onError={(err) => {
+          console.error("Audio element playback error:", err);
+          setIsPlaying(false);
+        }}
+      />
       <Button variant="outline" size="icon" onClick={handleRestart} disabled={areControlsDisabled} aria-label="Empezar de nuevo">
         <RotateCcw className="h-5 w-5" />
       </Button>

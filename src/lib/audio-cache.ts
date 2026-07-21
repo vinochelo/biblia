@@ -109,6 +109,8 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
         tempFilePath,
         {
           resource_type: "video",
+          format: "mp3",
+          bit_rate: "96k",
           public_id: `bible_audio/${key}`,
           overwrite: true,
           timeout: UPLOAD_TIMEOUT_MS,
