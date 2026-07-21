@@ -5,6 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function extractPlainTextFromBibleHtml(html: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, ' ')
+    .replace(/<h3>/g, ' ')
+    .replace(/<\/h3>/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/(?:^|\s)\d{1,3}\s/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 type AiUsageType = 'tts' | 'dictionary';
 
 const API_USAGE_COUNT_KEY = "api-usage-count";

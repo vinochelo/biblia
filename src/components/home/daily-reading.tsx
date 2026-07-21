@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { type TTSOutput, prepareTTS, generateTTSChunk, finalizeTTS } from "@/ai/flows/tts-flow";
-import { trackAiApiCall } from "@/lib/utils";
+import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -429,15 +429,7 @@ export function DailyReading() {
           }
 
           setHtmlContent(combinedContent);
-          // Create text version for TTS on the client
-          if (typeof window !== 'undefined') {
-            const tempDiv = document.createElement("div");
-            tempDiv.innerHTML = combinedContent.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
-            // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
-            const verseSpans = tempDiv.querySelectorAll('span.v');
-            verseSpans.forEach(span => span.remove());
-            setTextContent(tempDiv.textContent || tempDiv.innerText || "");
-          }
+          setTextContent(extractPlainTextFromBibleHtml(combinedContent));
         } catch (e: any) {
           console.error("Error fetching passages in daily-reading:", e);
           setError(e.message || "Error al cargar la lectura.");

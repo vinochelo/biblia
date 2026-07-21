@@ -10,7 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { type TTSOutput, prepareTTS, generateTTSChunk, finalizeTTS } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { AlertCircle } from "lucide-react";
-import { trackAiApiCall } from "@/lib/utils";
+import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
@@ -124,14 +124,7 @@ function DailyReadingPageContent() {
                         setError(result.error);
                     } else if (typeof result === 'string') {
                         setHtmlContent(result);
-                        if (typeof window !== 'undefined') {
-                            const tempDiv = document.createElement("div");
-                            tempDiv.innerHTML = result.replace(/<h3>/g, '\n\n').replace(/<\/h3>/g, '\n');
-                            // REMOVE VERSE SPANS BEFORE TEXT EXTRACTION:
-                            const verseSpans = tempDiv.querySelectorAll('span.v');
-                            verseSpans.forEach(span => span.remove());
-                            setTextContent(tempDiv.textContent || tempDiv.innerText || "");
-                        }
+                        setTextContent(extractPlainTextFromBibleHtml(result));
                     } else {
                         setError("No se recibió contenido válido de la lectura.");
                     }

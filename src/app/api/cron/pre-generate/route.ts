@@ -3,6 +3,7 @@ import { studyPlan } from '@/lib/study-plan';
 import { getPassagesText } from '@/lib/actions';
 import { textToSpeech } from '@/ai/flows/tts-flow';
 import { bibleVersions } from '@/lib/data';
+import { extractPlainTextFromBibleHtml } from '@/lib/utils';
 
 /**
  * Endpoint de Cron Job para pre-generar los audios de la lectura del día.
@@ -45,12 +46,7 @@ export async function GET(request: Request) {
         console.log(`Cron Job: Procesando versión ${version.abbreviation}...`);
         const result = await getPassagesText(reading.passages, version.id);
         if (typeof result === 'string') {
-          const plainText = result
-            .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, '')
-            .replace(/<h3>/g, '\n\n')
-            .replace(/<\/h3>/g, '\n')
-            .replace(/<[^>]*>?/gm, '')
-            .trim();
+          const plainText = extractPlainTextFromBibleHtml(result);
 
           if (plainText) {
             console.log(`Cron Job: Generando audio para versión ${version.abbreviation}...`);

@@ -20,7 +20,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<boolean>(false);
 
-  // 1. Silent pre-fetch on text change: Check if audio is already cached in Cloudinary/Firebase
+  // Silent pre-fetch when text/fetcher are available so audioSrc is ready before the user clicks
   useEffect(() => {
     setIsPlaying(false);
     setAudioSrc(null);
@@ -29,7 +29,6 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
 
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.removeAttribute('src');
     }
 
     if (text && fetcher) {
@@ -38,9 +37,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
         if (isMounted && res?.audio) {
           setAudioSrc(res.audio);
         }
-      }).catch(() => {
-        // Ignorar errores en pre-fetch silencioso
-      });
+      }).catch(() => {});
 
       return () => {
         isMounted = false;
@@ -69,7 +66,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     const el = audioRef.current;
     if (!el) return;
 
-    // Case A: Audio URL already available (Instant Play on touch for Android & iOS)
+    // Case A: Audio URL already available
     if (audioSrc) {
       if (isPlaying) {
         el.pause();
@@ -94,11 +91,6 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       abortRef.current = false;
       setIsFetching(true);
 
-      // Touch gesture priming for mobile browsers
-      try {
-        el.load();
-      } catch {}
-
       try {
         const result = await fetcher(text);
 
@@ -107,13 +99,12 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
         if (result?.audio) {
           setAudioSrc(result.audio);
           el.src = result.audio;
-          el.load();
 
           try {
             await el.play();
             setIsPlaying(true);
           } catch (e) {
-            console.warn("Autoplay bloqueado por políticas de navegador móvil. Presione reproducir de nuevo.", e);
+            console.warn("Autoplay bloqueado por el navegador móvil. Toca jugar de nuevo.", e);
             setIsPlaying(false);
           }
         }
@@ -154,7 +145,8 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     <div className="flex items-center gap-2">
       <audio
         ref={audioRef}
-        preload="metadata"
+        src={audioSrc || undefined}
+        preload="auto"
         onPlay={handlePlay}
         onPause={handlePause}
         onEnded={handleEnded}
