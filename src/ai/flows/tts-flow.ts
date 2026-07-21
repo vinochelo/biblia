@@ -377,93 +377,35 @@ export async function generateTTSChunk(
   chunkText: string,
   chunkIndex: number,
   totalChunks: number
-): Promise<{ success: boolean; url?: string }> {
+): Promise<{ success: boolean; pcmBase64: string }> {
   // 1. Generate single chunk (returns raw PCM Buffer)
   const pcmBuffer = await generateSingleChunk(chunkText, chunkIndex, totalChunks);
-  
-  // 2. Convert raw PCM Buffer to WAV Buffer
-  const wavBuffer = pcmToWav(pcmBuffer, TTS_SAMPLE_RATE, TTS_CHANNELS, TTS_SAMPLE_WIDTH * 8);
-  const wavBase64 = wavBuffer.toString('base64');
-  
-  // 3. Upload chunk to Cloudinary
-  if (!ensureCloudinaryConfig()) {
-    throw new Error("Cloudinary credentials are not configured in environment variables.");
-  }
-  
-  const publicId = `bible_audio_chunks/${sessionId}/chunk_${chunkIndex}`;
-  console.log(`TTS Server Actions: Uploading chunk ${chunkIndex + 1}/${totalChunks} to Cloudinary under public ID: ${publicId}`);
-  
-  const uploadResponse = await cloudinary.uploader.upload(
-    `data:audio/wav;base64,${wavBase64}`,
-    {
-      resource_type: "video",
-      public_id: publicId,
-      overwrite: true,
-    }
-  );
-  
-  return { success: true, url: uploadResponse.secure_url };
+  return { success: true, pcmBase64: pcmBuffer.toString("base64") };
 }
 
 export async function finalizeTTS(
   sessionId: string,
   text: string,
-  totalChunks: number
+  pcmParts: string[]
 ): Promise<{ audio: string }> {
   const normalizedText = normalizeTextForTTS(text);
-  
-  const { CLOUDINARY_CLOUD_NAME } = process.env;
-  if (!CLOUDINARY_CLOUD_NAME) {
-    throw new Error("CLOUDINARY_CLOUD_NAME is not configured.");
+  if (!normalizedText) {
+    throw new Error("Texto normalizado vacío para finalizar TTS.");
+  }
+  if (!pcmParts || pcmParts.length === 0) {
+    throw new Error("No se recibieron partes PCM para finalizar el audio.");
   }
 
-  const pcmBuffers: Buffer[] = [];
-  
-  // 1. Download all generated chunks and extract their PCM buffers
-  for (let i = 0; i < totalChunks; i++) {
-    const chunkUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/bible_audio_chunks/${sessionId}/chunk_${i}.wav`;
-    console.log(`TTS Server Actions: Downloading chunk ${i + 1}/${totalChunks} from ${chunkUrl}`);
-    
-    let downloadedBuffer: Buffer;
-    try {
-      const res = await fetch(chunkUrl);
-      if (!res.ok) {
-        throw new Error(`Failed to download chunk ${i} (status: ${res.status})`);
-      }
-      const arrayBuffer = await res.arrayBuffer();
-      downloadedBuffer = Buffer.from(arrayBuffer);
-    } catch (err: any) {
-      throw new Error(`Error descargando fragmento ${i + 1}: ${err.message || err}`);
-    }
-    
-    const pcmData = extractPcmFromDataUri(`data:audio/wav;base64,${downloadedBuffer.toString('base64')}`);
-    pcmBuffers.push(pcmData);
-  }
-  
-  // 2. Concatenate PCM
+  // 1. Concatenate all PCM buffers in memory
+  const pcmBuffers = pcmParts.map((base64: string) => Buffer.from(base64, "base64"));
   const combinedPcmBuffer = Buffer.concat(pcmBuffers);
-  
-  // 3. Convert to WAV
+
+  // 2. Convert combined PCM to WAV Base64
   const wavBase64 = await toWav(combinedPcmBuffer);
-  
-  // 4. Cache audio (uploads final WAV to Cloudinary and saves URL in Firebase RTDB)
+
+  // 3. Cache audio (uploads final WAV to Cloudinary and saves URL in Firebase RTDB)
   const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, wavBase64);
-  
-  // 5. Clean up temporary chunks asynchronously
-  const deletePromises = [];
-  for (let i = 0; i < totalChunks; i++) {
-    const publicId = `bible_audio_chunks/${sessionId}/chunk_${i}`;
-    deletePromises.push(
-      cloudinary.uploader.destroy(publicId, { resource_type: "video" })
-        .catch(err => console.error(`Failed to delete temporary chunk ${publicId}:`, err))
-    );
-  }
-  
-  // Do not block response for deletion
-  Promise.all(deletePromises).then(() => {
-    console.log(`TTS Server Actions: Cleaned up temporary chunks for session ${sessionId}`);
-  });
-  
+
   return { audio: downloadUrl };
 }
 

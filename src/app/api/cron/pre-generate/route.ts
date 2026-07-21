@@ -31,36 +31,39 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No hay lectura asignada para hoy.' });
     }
 
-    // Pre-generar todas las versiones en español principales
+    // Pre-generar secuencialmente para evitar sobrecargar la cuota de la API de Gemini (429 Rate Limit)
     const targetVersions = bibleVersions.filter(v => 
       ['RVR09', 'PDT', 'SSE', 'VBL'].includes(v.abbreviation)
     );
 
-    console.log(`Cron Job: Iniciando pre-generación para ${targetVersions.length} versiones en español (${targetVersions.map(v => v.abbreviation).join(', ')})...`);
+    console.log(`Cron Job: Iniciando pre-generación secuencial para ${targetVersions.length} versiones (${targetVersions.map(v => v.abbreviation).join(', ')})...`);
 
-    await Promise.all(
-      targetVersions.map(async (version) => {
-        try {
-          const result = await getPassagesText(reading.passages, version.id);
-          if (typeof result === 'string') {
-            const plainText = result
-              .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, '')
-              .replace(/<h3>/g, '\n\n')
-              .replace(/<\/h3>/g, '\n')
-              .replace(/<[^>]*>?/gm, '')
-              .trim();
+    const results: Record<string, boolean> = {};
 
-            if (plainText) {
-              console.log(`Cron Job: Generando audio para versión ${version.abbreviation}...`);
-              await textToSpeech({ text: plainText });
-              console.log(`Cron Job: Éxito pre-generación versión ${version.abbreviation}.`);
-            }
+    for (const version of targetVersions) {
+      try {
+        console.log(`Cron Job: Procesando versión ${version.abbreviation}...`);
+        const result = await getPassagesText(reading.passages, version.id);
+        if (typeof result === 'string') {
+          const plainText = result
+            .replace(/<span[^>]*class="v"[^>]*>.*?<\/span>/g, '')
+            .replace(/<h3>/g, '\n\n')
+            .replace(/<\/h3>/g, '\n')
+            .replace(/<[^>]*>?/gm, '')
+            .trim();
+
+          if (plainText) {
+            console.log(`Cron Job: Generando audio para versión ${version.abbreviation}...`);
+            await textToSpeech({ text: plainText });
+            console.log(`Cron Job: Éxito pre-generación versión ${version.abbreviation}.`);
+            results[version.abbreviation] = true;
           }
-        } catch (versionError: any) {
-          console.error(`Cron Job: Error en versión ${version.abbreviation}:`, versionError.message || versionError);
         }
-      })
-    );
+      } catch (versionError: any) {
+        console.error(`Cron Job: Error en versión ${version.abbreviation}:`, versionError.message || versionError);
+        results[version.abbreviation] = false;
+      }
+    }
 
     return NextResponse.json({ 
       success: true, 

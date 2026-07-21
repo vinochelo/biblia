@@ -102,10 +102,17 @@ async function generateAudioViaApi(
     throw new Error("No se encontraron fragmentos para generar");
   }
 
+  const pcmParts: string[] = [];
+
   for (let i = 0; i < chunks.length; i++) {
     onProgress(`Generando ${i + 1}/${chunks.length}...`);
     try {
-      await generateTTSChunk(sessionId, chunks[i], i, chunks.length);
+      const res = await generateTTSChunk(sessionId, chunks[i], i, chunks.length);
+      if (res && res.pcmBase64) {
+        pcmParts.push(res.pcmBase64);
+      } else {
+        throw new Error("No se recibió buffer PCM del fragmento");
+      }
     } catch (e: any) {
       throw new Error(`Fragmento ${i + 1} falló: ${e.message || e}`);
     }
@@ -117,9 +124,9 @@ async function generateAudioViaApi(
   }
 
   // Step 3: Finalize - combine and cache
-  onProgress("Guardando...");
+  onProgress("Guardando en la nube...");
   try {
-    const finalData = await finalizeTTS(sessionId, text, chunks.length);
+    const finalData = await finalizeTTS(sessionId, text, pcmParts);
     return { audio: finalData.audio };
   } catch (e: any) {
     throw new Error(e.message || "Error guardando audio");
