@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
-import { type TTSOutput, prepareTTS, generateTTSChunk, finalizeTTS } from "@/ai/flows/tts-flow";
+import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -82,14 +82,25 @@ async function fetchChapterWithRetry(chapterId: string, version: string, retries
   throw new Error("Falló después de reintentos");
 }
 
-// --- Helper: Full TTS via Server Actions ---
+// --- Helper: Full TTS via API Routes ---
 async function generateAudioViaApi(
   text: string,
   onProgress: (msg: string) => void
 ): Promise<TTSOutput | null> {
   // Step 1: Check cache
   onProgress("Verificando caché...");
-  const checkData = await prepareTTS(text);
+  const checkRes = await fetch("/api/tts?action=check-cache", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!checkRes.ok) {
+    const err = await checkRes.json().catch(() => ({ error: checkRes.statusText }));
+    throw new Error(err.error || `Error (${checkRes.status}) verificando caché`);
+  }
+
+  const checkData = await checkRes.json();
 
   if (checkData.status === "cached" && checkData.audio) {
     return { audio: checkData.audio };
@@ -97,8 +108,7 @@ async function generateAudioViaApi(
 
   // Step 2: Generate each chunk individually
   const chunks: string[] = checkData.chunks || [];
-  const sessionId = checkData.sessionId;
-  if (chunks.length === 0 || !sessionId) {
+  if (chunks.length === 0) {
     throw new Error("No se encontraron fragmentos para generar");
   }
 
@@ -107,7 +117,22 @@ async function generateAudioViaApi(
   for (let i = 0; i < chunks.length; i++) {
     onProgress(`Generando ${i + 1}/${chunks.length}...`);
     try {
-      const res = await generateTTSChunk(sessionId, chunks[i], i, chunks.length);
+      const chunkRes = await fetch("/api/tts?action=generate-chunk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chunkText: chunks[i],
+          chunkIndex: i,
+          totalChunks: chunks.length,
+        }),
+      });
+
+      if (!chunkRes.ok) {
+        const err = await chunkRes.json().catch(() => ({ error: chunkRes.statusText }));
+        throw new Error(err.error || `Error de red (${chunkRes.status})`);
+      }
+
+      const res = await chunkRes.json();
       if (res && res.pcmBase64) {
         pcmParts.push(res.pcmBase64);
       } else {
@@ -117,7 +142,6 @@ async function generateAudioViaApi(
       throw new Error(`Fragmento ${i + 1} falló: ${e.message || e}`);
     }
 
-    // Small delay between chunks
     if (i < chunks.length - 1) {
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -126,7 +150,18 @@ async function generateAudioViaApi(
   // Step 3: Finalize - combine and cache
   onProgress("Guardando en la nube...");
   try {
-    const finalData = await finalizeTTS(sessionId, text, pcmParts);
+    const finalizeRes = await fetch("/api/tts?action=finalize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, pcmParts }),
+    });
+
+    if (!finalizeRes.ok) {
+      const err = await finalizeRes.json().catch(() => ({ error: finalizeRes.statusText }));
+      throw new Error(err.error || `Error (${finalizeRes.status}) guardando audio`);
+    }
+
+    const finalData = await finalizeRes.json();
     return { audio: finalData.audio };
   } catch (e: any) {
     throw new Error(e.message || "Error guardando audio");

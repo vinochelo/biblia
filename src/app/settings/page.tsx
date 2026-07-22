@@ -1,6 +1,6 @@
-
 import { UsageMonitor } from '@/components/settings/usage-monitor';
 import { AiUsageMonitor } from '@/components/settings/ai-usage-monitor';
+import { CronLogViewer } from '@/components/settings/cron-log-viewer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
@@ -12,7 +12,7 @@ export default function SettingsPage() {
         <div className="space-y-2">
             <h1 className="text-3xl font-headline font-bold">Configuración y Uso</h1>
             <p className="text-muted-foreground">
-                Monitorea el consumo de las APIs para desarrollo.
+                Monitorea el consumo de las APIs y el estado de la generación automática de audios.
             </p>
         </div>
         
@@ -23,6 +23,18 @@ export default function SettingsPage() {
             La clave API para producción se gestiona de forma segura en el servidor. Los contadores de uso aquí son una herramienta de desarrollo y se basan en los límites conocidos de las capas gratuitas (ej. 15 solicitudes por minuto para la IA de Google o 5,000 al mes para api.bible). Los límites reales pueden variar según tu plan.
           </AlertDescription>
         </Alert>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Historial de Ejecución Automática (Pre-generación 5 AM)</CardTitle>
+            <CardDescription>
+                Registro de corridas del Cron Job diario que genera los audios en la nube de Firebase.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CronLogViewer />
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
