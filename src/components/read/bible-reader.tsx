@@ -3,7 +3,7 @@
 import { getBooks, getChapters, getChapter } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { Book, ChapterSummary, Chapter } from "@/lib/types";
-import { Loader2, Terminal, BookOpen } from "lucide-react";
+import { Loader2, Terminal, BookOpen, Play, Pause, Volume2, AlertCircle } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
@@ -28,12 +28,21 @@ import {
   DialogTitle,
   DialogDescription
 } from "@/components/ui/dialog";
-import { ScrollArea } from "../ui/scroll-area";
-import Link from "next/link";
+
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const LAST_BOOK_STORAGE_KEY = "last-book-id";
 const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
+
+type AudioStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
+
+/** Extrae texto plano del HTML del capítulo usando el DOM */
+function extractPlainText(html: string): string {
+  if (typeof window === 'undefined') return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return (div.textContent || div.innerText || '').replace(/\s+/g, ' ').trim();
+}
 
 function BibleReaderContent() {
   const searchParams = useSearchParams();
@@ -66,6 +75,16 @@ function BibleReaderContent() {
   const [dictionaryResult, setDictionaryResult] = useState<{term: string, definition: string, reference?: string} | null>(null);
   const [concordanceResult, setConcordanceResult] = useState<ConcordanceOutput | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // TTS / Audio state
+  const [audioStatus, setAudioStatus] = useState<AudioStatus>('idle');
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [audioProgress, setAudioProgress] = useState(0); // 0–100
+  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  // Cache audio URL per chapter so we don't re-request
+  const audioCache = useRef<Record<string, string>>({});
 
 
   const handleVersionChange = (newVersion: string) => {
@@ -178,7 +197,197 @@ function BibleReaderContent() {
       setChapterContent(null);
     }
   }, [selectedChapter, version, fetchChapterContent]);
-  
+
+  // Reset audio state when chapter changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+    }
+    setAudioStatus('idle');
+    setAudioUrl(null);
+    setAudioError(null);
+    setAudioProgress(0);
+    setChunkProgress(null);
+  }, [selectedChapter]);
+
+  // ── TTS Logic ──────────────────────────────────────────────────────────────
+
+  const handlePlayAudio = async () => {
+    // If already have a URL loaded and paused, just resume
+    if (audioRef.current && audioUrl && audioStatus === 'paused') {
+      audioRef.current.play();
+      setAudioStatus('playing');
+      return;
+    }
+
+    // If playing, pause
+    if (audioRef.current && audioStatus === 'playing') {
+      audioRef.current.pause();
+      setAudioStatus('paused');
+      return;
+    }
+
+    // If we already cached the URL for this chapter, play directly
+    if (selectedChapter && audioCache.current[selectedChapter]) {
+      const cachedUrl = audioCache.current[selectedChapter];
+      setAudioUrl(cachedUrl);
+      setAudioStatus('playing');
+      if (audioRef.current) {
+        audioRef.current.src = cachedUrl;
+        audioRef.current.play();
+      }
+      return;
+    }
+
+    if (!chapterContent) return;
+
+    const plainText = extractPlainText(chapterContent.content);
+    if (!plainText) {
+      setAudioError('No se encontró texto para leer.');
+      setAudioStatus('error');
+      return;
+    }
+
+    setAudioStatus('loading');
+    setAudioError(null);
+    setChunkProgress(null);
+
+    try {
+      // Step 1: Check cache
+      const cacheRes = await fetch('/api/tts?action=check-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: plainText }),
+      });
+
+      if (!cacheRes.ok) {
+        const err = await cacheRes.json().catch(() => ({ error: `Error ${cacheRes.status}` }));
+        throw new Error(err.error || `Error ${cacheRes.status} al verificar caché`);
+      }
+
+      const cacheData = await cacheRes.json();
+
+      if (cacheData.status === 'cached' && cacheData.audio) {
+        // Audio already cached — play directly
+        const url = cacheData.audio;
+        if (selectedChapter) audioCache.current[selectedChapter] = url;
+        setAudioUrl(url);
+        if (audioRef.current) {
+          audioRef.current.src = url;
+          audioRef.current.play();
+        }
+        setAudioStatus('playing');
+        return;
+      }
+
+      // Step 2: Generate chunks
+      const chunks: string[] = cacheData.chunks || [];
+      if (chunks.length === 0) throw new Error('No se recibieron fragmentos de texto para procesar.');
+
+      setChunkProgress({ current: 0, total: chunks.length });
+
+      const pcmParts: string[] = [];
+
+      for (let i = 0; i < chunks.length; i++) {
+        setChunkProgress({ current: i + 1, total: chunks.length });
+
+        let attempts = 0;
+        const maxAttempts = 3;
+        let pcmBase64: string | null = null;
+
+        while (attempts < maxAttempts && pcmBase64 === null) {
+          attempts++;
+          const chunkRes = await fetch('/api/tts?action=generate-chunk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chunkText: chunks[i], chunkIndex: i, totalChunks: chunks.length }),
+          });
+
+          if (chunkRes.status === 429 && attempts < maxAttempts) {
+            // Rate limited — wait and retry
+            await new Promise(r => setTimeout(r, 5000 * attempts));
+            continue;
+          }
+
+          if (!chunkRes.ok) {
+            const err = await chunkRes.json().catch(() => ({ error: `Error ${chunkRes.status}` }));
+            throw new Error(err.error || `Error generando fragmento ${i + 1}`);
+          }
+
+          const chunkData = await chunkRes.json();
+          if (!chunkData.pcmBase64) throw new Error(`Fragmento ${i + 1} no retornó datos de audio.`);
+          pcmBase64 = chunkData.pcmBase64;
+        }
+
+        if (!pcmBase64) throw new Error(`No se pudo generar el fragmento ${i + 1} después de ${maxAttempts} intentos.`);
+        pcmParts.push(pcmBase64);
+      }
+
+      // Step 3: Finalize
+      setChunkProgress({ current: chunks.length, total: chunks.length });
+      const finalRes = await fetch('/api/tts?action=finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: plainText, pcmParts }),
+      });
+
+      if (!finalRes.ok) {
+        const err = await finalRes.json().catch(() => ({ error: `Error ${finalRes.status}` }));
+        throw new Error(err.error || `Error finalizando el audio`);
+      }
+
+      const finalData = await finalRes.json();
+      if (!finalData.audio) throw new Error('No se recibió la URL del audio final.');
+
+      const url = finalData.audio;
+      if (selectedChapter) audioCache.current[selectedChapter] = url;
+      setAudioUrl(url);
+      setChunkProgress(null);
+
+      if (audioRef.current) {
+        audioRef.current.src = url;
+        audioRef.current.play();
+      }
+      setAudioStatus('playing');
+
+    } catch (e: any) {
+      console.error('TTS error:', e);
+      setAudioError(e.message || 'Error desconocido al generar el audio.');
+      setAudioStatus('error');
+      setChunkProgress(null);
+    }
+  };
+
+  const handleAudioTimeUpdate = () => {
+    if (!audioRef.current) return;
+    const { currentTime, duration } = audioRef.current;
+    if (duration > 0) {
+      setAudioProgress((currentTime / duration) * 100);
+    }
+  };
+
+  const handleAudioEnded = () => {
+    setAudioStatus('paused');
+    setAudioProgress(0);
+    if (audioRef.current) audioRef.current.currentTime = 0;
+  };
+
+  const handleAudioError = () => {
+    setAudioError('Error al reproducir el audio. Intenta generarlo de nuevo.');
+    setAudioStatus('error');
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current || !audioUrl) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
+    audioRef.current.currentTime = ratio * audioRef.current.duration;
+  };
+
+  // ── Dictionary handlers ──────────────────────────────────────────────────
+
   const handleSelection = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
@@ -237,6 +446,15 @@ function BibleReaderContent() {
 
   return (
     <div className="space-y-6">
+        {/* Hidden audio element */}
+        <audio
+          ref={audioRef}
+          onTimeUpdate={handleAudioTimeUpdate}
+          onEnded={handleAudioEnded}
+          onError={handleAudioError}
+          style={{ display: 'none' }}
+        />
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select value={version} onValueChange={handleVersionChange}>
                 <SelectTrigger className="w-full">
@@ -307,7 +525,69 @@ function BibleReaderContent() {
             {!isLoading.content && chapterContent && (
                 <Card onMouseUp={handleSelection} ref={contentRef}>
                     <CardHeader>
-                        <CardTitle className="font-headline text-2xl">{chapterContent.reference}</CardTitle>
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <CardTitle className="font-headline text-2xl">{chapterContent.reference}</CardTitle>
+
+                          {/* ── Audio Player ── */}
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            {/* Main button */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handlePlayAudio}
+                              disabled={audioStatus === 'loading'}
+                              className="flex items-center gap-2 min-w-[160px] justify-center"
+                            >
+                              {audioStatus === 'loading' ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  {chunkProgress
+                                    ? `Generando (${chunkProgress.current}/${chunkProgress.total})...`
+                                    : 'Preparando audio...'}
+                                </>
+                              ) : audioStatus === 'playing' ? (
+                                <>
+                                  <Pause className="h-4 w-4" />
+                                  Pausar
+                                </>
+                              ) : audioStatus === 'paused' ? (
+                                <>
+                                  <Play className="h-4 w-4" />
+                                  Continuar
+                                </>
+                              ) : audioStatus === 'error' ? (
+                                <>
+                                  <AlertCircle className="h-4 w-4 text-destructive" />
+                                  Reintentar
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 className="h-4 w-4" />
+                                  Escuchar
+                                </>
+                              )}
+                            </Button>
+
+                            {/* Progress bar (shown while playing or paused with audio loaded) */}
+                            {audioUrl && (audioStatus === 'playing' || audioStatus === 'paused') && (
+                              <div
+                                className="w-full min-w-[160px] h-2 bg-muted rounded-full overflow-hidden cursor-pointer"
+                                onClick={handleSeek}
+                                title="Haz clic para saltar"
+                              >
+                                <div
+                                  className="h-full bg-primary rounded-full transition-all duration-300"
+                                  style={{ width: `${audioProgress}%` }}
+                                />
+                              </div>
+                            )}
+
+                            {/* Error message */}
+                            {audioStatus === 'error' && audioError && (
+                              <p className="text-xs text-destructive text-right max-w-[200px]">{audioError}</p>
+                            )}
+                          </div>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <div
