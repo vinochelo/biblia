@@ -44,6 +44,56 @@ function extractPlainText(html: string): string {
   return (div.textContent || div.innerText || '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Ensambla un Blob URL de WAV directamente en el navegador a partir de fragmentos PCM en base64.
+ * Esto permite reproducir el audio inmediatamente sin depender de Cloudinary.
+ */
+function buildWavBlobUrl(pcmPartsBase64: string[]): string {
+  const TTS_SAMPLE_RATE = 24000;
+  const TTS_CHANNELS = 1;
+  const TTS_BIT_DEPTH = 16;
+
+  // Decodificar todos los fragmentos base64 a Uint8Array
+  const buffers = pcmPartsBase64.map((b64) => {
+    const binaryStr = atob(b64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    return bytes;
+  });
+
+  const totalPcmLength = buffers.reduce((sum, b) => sum + b.length, 0);
+  const pcmData = new Uint8Array(totalPcmLength);
+  let offset = 0;
+  for (const buf of buffers) { pcmData.set(buf, offset); offset += buf.length; }
+
+  // Construir header WAV
+  const wavHeader = new ArrayBuffer(44);
+  const v = new DataView(wavHeader);
+  // RIFF
+  v.setUint8(0, 0x52); v.setUint8(1, 0x49); v.setUint8(2, 0x46); v.setUint8(3, 0x46); // "RIFF"
+  v.setUint32(4, 36 + pcmData.length, true);
+  v.setUint8(8, 0x57); v.setUint8(9, 0x41); v.setUint8(10, 0x56); v.setUint8(11, 0x45); // "WAVE"
+  // fmt
+  v.setUint8(12, 0x66); v.setUint8(13, 0x6d); v.setUint8(14, 0x74); v.setUint8(15, 0x20); // "fmt "
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, TTS_CHANNELS, true);
+  v.setUint32(24, TTS_SAMPLE_RATE, true);
+  v.setUint32(28, TTS_SAMPLE_RATE * TTS_CHANNELS * (TTS_BIT_DEPTH / 8), true);
+  v.setUint16(32, TTS_CHANNELS * (TTS_BIT_DEPTH / 8), true);
+  v.setUint16(34, TTS_BIT_DEPTH, true);
+  // data
+  v.setUint8(36, 0x64); v.setUint8(37, 0x61); v.setUint8(38, 0x74); v.setUint8(39, 0x61); // "data"
+  v.setUint32(40, pcmData.length, true);
+
+  const wavBuffer = new Uint8Array(44 + pcmData.length);
+  wavBuffer.set(new Uint8Array(wavHeader), 0);
+  wavBuffer.set(pcmData, 44);
+
+  const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+  return URL.createObjectURL(blob);
+}
+
 function BibleReaderContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -82,9 +132,16 @@ function BibleReaderContent() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioProgress, setAudioProgress] = useState(0); // 0–100
   const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
+  const [hasPendingCloudSave, setHasPendingCloudSave] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   // Cache audio URL per chapter so we don't re-request
   const audioCache = useRef<Record<string, string>>({});
+  // Store pending PCM parts & text for retry if cloud save fails
+  const pendingPcmParts = useRef<string[]>([]);
+  const pendingText = useRef<string>('');
+  // Track blob URLs to revoke on chapter change
+  const blobUrlRef = useRef<string | null>(null);
 
 
   const handleVersionChange = (newVersion: string) => {
@@ -204,11 +261,20 @@ function BibleReaderContent() {
       audioRef.current.pause();
       audioRef.current.src = '';
     }
+    // Revoke old blob URL to free memory
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
     setAudioStatus('idle');
     setAudioUrl(null);
     setAudioError(null);
     setAudioProgress(0);
     setChunkProgress(null);
+    setIsSavingToCloud(false);
+    setHasPendingCloudSave(false);
+    pendingPcmParts.current = [];
+    pendingText.current = '';
   }, [selectedChapter]);
 
   // ── TTS Logic ──────────────────────────────────────────────────────────────
@@ -324,38 +390,117 @@ function BibleReaderContent() {
         pcmParts.push(pcmBase64);
       }
 
-      // Step 3: Finalize
-      setChunkProgress({ current: chunks.length, total: chunks.length });
-      const finalRes = await fetch('/api/tts?action=finalize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: plainText, pcmParts }),
-      });
-
-      if (!finalRes.ok) {
-        const err = await finalRes.json().catch(() => ({ error: `Error ${finalRes.status}` }));
-        throw new Error(err.error || `Error finalizando el audio`);
-      }
-
-      const finalData = await finalRes.json();
-      if (!finalData.audio) throw new Error('No se recibió la URL del audio final.');
-
-      const url = finalData.audio;
-      if (selectedChapter) audioCache.current[selectedChapter] = url;
-      setAudioUrl(url);
+      // Step 3: Reproducir inmediatamente desde el navegador (Blob URL local)
+      // Esto garantiza que el usuario escuche el audio aunque Cloudinary falle.
       setChunkProgress(null);
-
+      const blobUrl = buildWavBlobUrl(pcmParts);
+      blobUrlRef.current = blobUrl;
+      setAudioUrl(blobUrl);
       if (audioRef.current) {
-        audioRef.current.src = url;
+        audioRef.current.src = blobUrl;
         audioRef.current.play();
       }
       setAudioStatus('playing');
+
+      // Guardar PCM parts y texto para posibles reintentos de guardado
+      pendingPcmParts.current = pcmParts;
+      pendingText.current = plainText;
+
+      // Step 4 (segundo plano): Subir a Cloudinary para caché permanente
+      setIsSavingToCloud(true);
+      (async () => {
+        const MAX_FINALIZE_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= MAX_FINALIZE_ATTEMPTS; attempt++) {
+          try {
+            const finalRes = await fetch('/api/tts?action=finalize', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: plainText, pcmParts }),
+            });
+            if (!finalRes.ok) {
+              const err = await finalRes.json().catch(() => ({ error: `Error ${finalRes.status}` }));
+              throw new Error(err.error || `Error finalizando (intento ${attempt})`);
+            }
+            const finalData = await finalRes.json();
+            if (finalData.audio) {
+              // Reemplazar blob URL con URL permanente de Cloudinary
+              if (selectedChapter) audioCache.current[selectedChapter] = finalData.audio;
+              // Actualizar src del audio solo si sigue reproduciendo el mismo audio
+              if (audioRef.current && blobUrlRef.current === blobUrl) {
+                const currentTime = audioRef.current.currentTime;
+                const wasPlaying = !audioRef.current.paused;
+                audioRef.current.src = finalData.audio;
+                audioRef.current.currentTime = currentTime;
+                if (wasPlaying) audioRef.current.play();
+                blobUrlRef.current = null;
+                URL.revokeObjectURL(blobUrl);
+              }
+              setAudioUrl(finalData.audio);
+              pendingPcmParts.current = [];
+              pendingText.current = '';
+              setHasPendingCloudSave(false);
+            }
+            break;
+          } catch (e: any) {
+            console.warn(`TTS finalize intento ${attempt}/${MAX_FINALIZE_ATTEMPTS} falló:`, e.message);
+            if (attempt < MAX_FINALIZE_ATTEMPTS) {
+              await new Promise(r => setTimeout(r, attempt * 5000));
+            } else {
+              console.error('TTS: No se pudo guardar en la nube. El audio se mantiene reproducible en esta sesión.');
+            }
+          }
+        }
+        setIsSavingToCloud(false);
+        // If we exhausted all attempts and still have pending parts, show retry button
+        if (pendingPcmParts.current.length > 0) {
+          setHasPendingCloudSave(true);
+        }
+      })();
 
     } catch (e: any) {
       console.error('TTS error:', e);
       setAudioError(e.message || 'Error desconocido al generar el audio.');
       setAudioStatus('error');
       setChunkProgress(null);
+      setIsSavingToCloud(false);
+    }
+  };
+
+  /** Reintentar guardar en la nube los PCM que ya están en memoria */
+  const handleRetryCloudSave = async () => {
+    if (pendingPcmParts.current.length === 0 || !pendingText.current) return;
+    setIsSavingToCloud(true);
+    try {
+      const finalRes = await fetch('/api/tts?action=finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: pendingText.current, pcmParts: pendingPcmParts.current }),
+      });
+      if (!finalRes.ok) {
+        const err = await finalRes.json().catch(() => ({ error: `Error ${finalRes.status}` }));
+        throw new Error(err.error || 'Error al reintentar guardar');
+      }
+      const finalData = await finalRes.json();
+      if (finalData.audio) {
+        if (selectedChapter) audioCache.current[selectedChapter] = finalData.audio;
+        if (audioRef.current && blobUrlRef.current) {
+          const currentTime = audioRef.current.currentTime;
+          const wasPlaying = !audioRef.current.paused;
+          audioRef.current.src = finalData.audio;
+          audioRef.current.currentTime = currentTime;
+          if (wasPlaying) audioRef.current.play();
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+        setAudioUrl(finalData.audio);
+        pendingPcmParts.current = [];
+        pendingText.current = '';
+        setHasPendingCloudSave(false);
+      }
+    } catch (e: any) {
+      console.error('TTS retry cloud save error:', e);
+    } finally {
+      setIsSavingToCloud(false);
     }
   };
 
@@ -580,6 +725,24 @@ function BibleReaderContent() {
                                   style={{ width: `${audioProgress}%` }}
                                 />
                               </div>
+                            )}
+
+                            {/* Cloud saving indicator */}
+                            {isSavingToCloud && (
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Guardando en la nube...
+                              </p>
+                            )}
+
+                            {/* Retry cloud save button (shown when audio plays locally but cloud save failed) */}
+                            {!isSavingToCloud && hasPendingCloudSave && audioUrl && (audioStatus === 'playing' || audioStatus === 'paused') && (
+                              <button
+                                onClick={handleRetryCloudSave}
+                                className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
+                              >
+                                ☁ Reintentar guardar en la nube
+                              </button>
                             )}
 
                             {/* Error message */}
