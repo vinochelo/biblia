@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchBibleBrainChapterText, SPANISH_BIBLE_BRAIN_VERSIONS } from "@/lib/bible-brain";
 
 const API_BASE_URL = "https://rest.api.bible";
 const apiKey = process.env.BIBLE_API_KEY;
@@ -43,6 +44,22 @@ function parsePassageString(passage: string): { passageRef: string; chapterIds: 
 }
 
 async function fetchChapter(versionId: string, chapterId: string): Promise<{ reference: string; content: string } | { error: string }> {
+  // 1. Si la versión pertenece a Bible Brain (FCBH / Bible.is)
+  if (versionId.startsWith("bb-")) {
+    const bbVersion = SPANISH_BIBLE_BRAIN_VERSIONS.find((v) => v.id === versionId) || SPANISH_BIBLE_BRAIN_VERSIONS[0];
+    const [book, chStr] = chapterId.split(".");
+    const chNum = parseInt(chStr, 10) || 1;
+    const bbResult = await fetchBibleBrainChapterText(book, chNum, bbVersion.textFilesetId);
+
+    if ("error" in bbResult) {
+      // Si la clave de Bible Brain aún no está configurada, hacer respaldo automático a RVR 1909
+      console.log(`Bible Brain no disponible para ${versionId}, usando respaldo de RVR 1909...`);
+      return fetchChapter("592420522e16049f-01", chapterId);
+    }
+    return bbResult;
+  }
+
+  // 2. Si la versión pertenece a API.Bible
   if (!apiKey) return { error: "API key not configured" };
 
   const params = new URLSearchParams({
@@ -74,6 +91,7 @@ async function fetchChapter(versionId: string, chapterId: string): Promise<{ ref
     content: typeof chapter.content === "string" ? formatVerseNumbers(chapter.content) : "",
   };
 }
+
 
 /**
  * GET /api/passages?passages=Juan+4,1Samuel+14,1Samuel+15,Proverbios+26&version=xxx

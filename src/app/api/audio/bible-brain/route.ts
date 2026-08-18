@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
     SPANISH_BIBLE_BRAIN_VERSIONS.find((v) => v.id === versionId) ||
     SPANISH_BIBLE_BRAIN_VERSIONS[0];
 
-  const audioResult = await fetchBibleBrainAudioUrl(book, chapterNum, selectedVersion.filesetId);
+  const audioFileset = selectedVersion.audioFilesetId || selectedVersion.textFilesetId;
+  const audioResult = await fetchBibleBrainAudioUrl(book, chapterNum, audioFileset);
 
   if (!audioResult) {
     return NextResponse.json(
@@ -37,8 +38,9 @@ export async function GET(req: NextRequest) {
 
   let timestamps = null;
   if (withTimestamps) {
-    timestamps = await fetchBibleBrainTimestamps(book, chapterNum, selectedVersion.filesetId);
+    timestamps = await fetchBibleBrainTimestamps(book, chapterNum, audioFileset);
   }
+
 
   return NextResponse.json({
     available: true,
