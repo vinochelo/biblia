@@ -9,7 +9,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { trackApiCall, trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
-import { getHumanAudioForChapter } from "@/lib/human-audio-map";
+import { getHumanAudioForChapter, HUMAN_NARRATORS } from "@/lib/human-audio-map";
+
 
 
 import {
@@ -122,6 +123,10 @@ function BibleReaderContent() {
   const contentRef = useRef<HTMLDivElement>(null);
 
   // TTS / Audio state
+  const [selectedNarrator, setSelectedNarrator] = useState<string>(() => {
+    if (typeof window === "undefined") return "samuel-montoya";
+    return localStorage.getItem("preferred_human_narrator") || "samuel-montoya";
+  });
   const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai'>('human');
   const [audioStatus, setAudioStatus] = useState<AudioStatus>('idle');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -129,6 +134,24 @@ function BibleReaderContent() {
   const [audioProgress, setAudioProgress] = useState(0); // 0–100
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioCache = useRef<Record<string, string>>({});
+
+  const handleNarratorChange = (narratorId: string) => {
+    setSelectedNarrator(narratorId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("preferred_human_narrator", narratorId);
+    }
+    if (selectedChapter && audioSourceMode === 'human') {
+      const nextUrl = getHumanAudioForChapter(selectedChapter, narratorId);
+      setAudioUrl(nextUrl);
+      if (audioRef.current && nextUrl) {
+        audioRef.current.src = nextUrl;
+        if (audioStatus === 'playing') {
+          audioRef.current.play().catch(console.error);
+        }
+      }
+    }
+  };
+
 
 
 
@@ -255,7 +278,7 @@ function BibleReaderContent() {
 
     if (selectedChapter) {
       if (audioSourceMode === 'human') {
-        const humanAudio = getHumanAudioForChapter(selectedChapter);
+        const humanAudio = getHumanAudioForChapter(selectedChapter, selectedNarrator);
         if (humanAudio) {
           setAudioUrl(humanAudio);
           return;
@@ -263,7 +286,7 @@ function BibleReaderContent() {
       }
     }
     setAudioUrl(null);
-  }, [selectedChapter, audioSourceMode]);
+  }, [selectedChapter, audioSourceMode, selectedNarrator]);
 
 
   // ── Audio Playback Logic ───────────────────────────────────────────────────
@@ -289,7 +312,7 @@ function BibleReaderContent() {
 
     // Case 1: Human Pre-recorded Audio
     if (audioSourceMode === 'human' && selectedChapter) {
-      const humanUrl = getHumanAudioForChapter(selectedChapter);
+      const humanUrl = getHumanAudioForChapter(selectedChapter, selectedNarrator);
       if (humanUrl) {
         setAudioUrl(humanUrl);
         if (audioRef.current) {
@@ -304,6 +327,7 @@ function BibleReaderContent() {
         return;
       }
     }
+
 
     // Case 2: AI Voice (Edge Neural TTS / Cached Cloudinary)
     if (!chapterContent) return;
@@ -571,34 +595,52 @@ function BibleReaderContent() {
                           {/* ── Audio Player ── */}
                           <div className="flex flex-col items-end gap-2 shrink-0">
                             {/* Source selector (Human vs AI) */}
-                            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg text-xs">
-                              <button
-                                type="button"
-                                onClick={() => setAudioSourceMode('human')}
-                                className={`px-2 py-1 rounded-md transition-colors flex items-center gap-1 ${
-                                  audioSourceMode === 'human'
-                                    ? 'bg-background text-foreground shadow-sm font-medium'
-                                    : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                                title="Narración oficial en español por Samuel Montoya (RVR 1909)"
-                              >
-                                <Mic className="h-3 w-3" />
-                                Humana
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setAudioSourceMode('ai')}
-                                className={`px-2 py-1 rounded-md transition-colors flex items-center gap-1 ${
-                                  audioSourceMode === 'ai'
-                                    ? 'bg-background text-foreground shadow-sm font-medium'
-                                    : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                                title="Voz sintética neuronal de Microsoft Edge"
-                              >
-                                <Sparkles className="h-3 w-3" />
-                                IA Neuronal
-                              </button>
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              {audioSourceMode === 'human' && (
+                                <Select value={selectedNarrator} onValueChange={handleNarratorChange}>
+                                  <SelectTrigger className="h-7 text-xs w-[170px] bg-background">
+                                    <SelectValue placeholder="Voz Humana" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {HUMAN_NARRATORS.map((n) => (
+                                      <SelectItem key={n.id} value={n.id} className="text-xs">
+                                        🎙️ {n.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+
+                              <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setAudioSourceMode('human')}
+                                  className={`px-2 py-1 rounded-md transition-colors flex items-center gap-1 ${
+                                    audioSourceMode === 'human'
+                                      ? 'bg-background text-foreground shadow-sm font-medium'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                  title="Narración oficial en español pregrabada"
+                                >
+                                  <Mic className="h-3 w-3" />
+                                  Humana
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAudioSourceMode('ai')}
+                                  className={`px-2 py-1 rounded-md transition-colors flex items-center gap-1 ${
+                                    audioSourceMode === 'ai'
+                                      ? 'bg-background text-foreground shadow-sm font-medium'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                  title="Voz sintética neuronal de Microsoft Edge"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  IA Neuronal
+                                </button>
+                              </div>
                             </div>
+
 
                             {/* Main button */}
                             <Button

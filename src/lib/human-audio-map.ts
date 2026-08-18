@@ -1196,13 +1196,73 @@ export const RVR09_HUMAN_AUDIO_MAP: Record<string, string> = {
   "REV.22": "https://archive.org/download/BibliaEnAudioRVA1909/66-Apocalipsis%2022.mp3"
 };
 
+export interface HumanNarrator {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+}
+
+export const HUMAN_NARRATORS: HumanNarrator[] = [
+  {
+    id: "samuel-montoya",
+    name: "Samuel Montoya",
+    version: "RVR 1909",
+    description: "Narración clásica y solemne",
+  },
+  {
+    id: "rv60",
+    name: "Reina Valera 1960",
+    version: "RVR 1960",
+    description: "Narración estándar y contemporánea",
+  },
+  {
+    id: "wordproject",
+    name: "Español Neutro",
+    version: "Wordproject",
+    description: "Lectura continua fluida",
+  },
+];
+
+const BOOK_ORDER: Record<string, number> = {
+  "GEN": 1, "EXO": 2, "LEV": 3, "NUM": 4, "DEU": 5, "JOS": 6, "JDG": 7, "RUT": 8, "1SA": 9, "2SA": 10,
+  "1KI": 11, "2KI": 12, "1CH": 13, "2CH": 14, "EZR": 15, "NEH": 16, "EST": 17, "JOB": 18, "PSA": 19, "PRO": 20,
+  "ECC": 21, "SNG": 22, "ISA": 23, "JER": 24, "LAM": 25, "EZK": 26, "DAN": 27, "HOS": 28, "JOL": 29, "AMO": 30,
+  "OBA": 31, "JON": 32, "MIC": 33, "NAM": 34, "HAB": 35, "ZEP": 36, "HAG": 37, "ZEC": 38, "MAL": 39,
+  "MAT": 40, "MRK": 41, "LUK": 42, "JHN": 43, "ACT": 44, "ROM": 45, "1CO": 46, "2CO": 47, "GAL": 48, "EPH": 49,
+  "PHP": 50, "COL": 51, "1TH": 52, "2TH": 53, "1TI": 54, "2TI": 55, "TIT": 56, "PHM": 57, "HEB": 58, "JAS": 59,
+  "1PE": 60, "2PE": 61, "1JN": 62, "2JN": 63, "3JN": 64, "JUD": 65, "REV": 66
+};
+
 /**
  * Obtiene la URL directa del audio pregrabado con voz humana para un capítulo específico.
  * @param chapterId Identificador del capítulo (ej. "GEN.1", "PSA.23", "MAT.28", "JHN.3")
+ * @param narratorId ID del narrador ('samuel-montoya' | 'rv60' | 'wordproject')
  * @returns URL del archivo MP3 o null si no está disponible
  */
-export function getHumanAudioForChapter(chapterId: string): string | null {
+export function getHumanAudioForChapter(chapterId: string, narratorId = 'samuel-montoya'): string | null {
   if (!chapterId) return null;
   const normalizedKey = chapterId.toUpperCase().trim();
+
+  if (narratorId === 'rv60') {
+    const [book, chStr] = normalizedKey.split('.');
+    const bookIndex = BOOK_ORDER[book];
+    const chNum = parseInt(chStr, 10);
+    if (!bookIndex || isNaN(chNum)) return null;
+    const bStr = String(bookIndex).padStart(2, '0');
+    const cStr = String(chNum).padStart(3, '0');
+    return `https://archive.org/download/RV60_202010/RV60_B${bStr}C${cStr}.mp3`;
+  }
+
+  if (narratorId === 'wordproject') {
+    const [book, chStr] = normalizedKey.split('.');
+    const bookIndex = BOOK_ORDER[book];
+    const chNum = parseInt(chStr, 10);
+    if (!bookIndex || isNaN(chNum)) return null;
+    return `https://www.wordproaudio.net/bibles/app/audio/6/${bookIndex}/${chNum}.mp3`;
+  }
+
+  // Por defecto: Samuel Montoya (RVR 1909)
   return RVR09_HUMAN_AUDIO_MAP[normalizedKey] || null;
 }
+

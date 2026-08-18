@@ -13,7 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
-import { getHumanAudioForChapter } from "@/lib/human-audio-map";
+import { getHumanAudioForChapter, HUMAN_NARRATORS } from "@/lib/human-audio-map";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -28,10 +28,12 @@ const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
 const BROWSER_VOICE_RATE_KEY = 'browser-tts-rate';
 const FONT_SIZE_KEY = 'reader-font-size';
+const HUMAN_NARRATOR_KEY = 'preferred_human_narrator';
 
 type FontSize = 'sm' | 'md' | 'lg';
 const FONT_SIZE_LABELS: Record<FontSize, string> = { sm: 'Pequeña', md: 'Mediana', lg: 'Grande' };
 const FONT_SIZES: FontSize[] = ['sm', 'md', 'lg'];
+
 
 // --- Helper: Parse passage string to chapter IDs (client-side) ---
 const bookToId: { [key: string]: string } = {
@@ -151,12 +153,17 @@ export function DailyReading() {
   const [today, setToday] = useState(new Date());
 
   // Human / AI / Browser Audio state
+  const [selectedNarrator, setSelectedNarrator] = useState<string>(() => {
+    if (typeof window === "undefined") return "samuel-montoya";
+    return localStorage.getItem(HUMAN_NARRATOR_KEY) || "samuel-montoya";
+  });
   const [dailyChapters, setDailyChapters] = useState<{ id: string; reference: string; audioUrl: string | null }[]>([]);
   const [activeChapterIndex, setActiveChapterIndex] = useState(0);
   const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai' | 'browser'>('human');
   const [isHumanPlaying, setIsHumanPlaying] = useState(false);
   const [humanProgress, setHumanProgress] = useState(0);
   const humanAudioRef = useRef<HTMLAudioElement | null>(null);
+
 
   const { isCompleted, toggleComplete } = useStudyProgress();
 
@@ -432,7 +439,7 @@ export function DailyReading() {
             chaptersData.push({
               id: chapterId,
               reference: chapter.reference,
-              audioUrl: getHumanAudioForChapter(chapterId),
+              audioUrl: getHumanAudioForChapter(chapterId, selectedNarrator),
             });
           }
 
@@ -460,7 +467,29 @@ export function DailyReading() {
     };
 
     fetchContent();
-  }, [reading, version]);
+  }, [reading, version, selectedNarrator]);
+
+  const handleNarratorChange = (narratorId: string) => {
+    setSelectedNarrator(narratorId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(HUMAN_NARRATOR_KEY, narratorId);
+    }
+    setDailyChapters((prev) =>
+      prev.map((ch) => ({
+        ...ch,
+        audioUrl: getHumanAudioForChapter(ch.id, narratorId),
+      }))
+    );
+    const activeChId = dailyChapters[activeChapterIndex]?.id;
+    const nextUrl = getHumanAudioForChapter(activeChId, narratorId);
+    const el = humanAudioRef.current;
+    if (el && nextUrl) {
+      el.src = nextUrl;
+      if (isHumanPlaying) {
+        el.play().catch(console.error);
+      }
+    }
+  };
 
   // Reset audio on chapter or reading change
   useEffect(() => {
@@ -470,6 +499,7 @@ export function DailyReading() {
     setIsHumanPlaying(false);
     setHumanProgress(0);
   }, [reading, version]);
+
 
   const activeHumanAudioUrl = dailyChapters[activeChapterIndex]?.audioUrl || null;
 
@@ -924,9 +954,21 @@ export function DailyReading() {
                             </Button>
                           </div>
 
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            🎙️ <strong className="text-foreground">Samuel Montoya</strong> (RVR 1909) - {dailyChapters[activeChapterIndex]?.reference || 'Lectura'}
-                          </span>
+                          {/* Narrator Picker */}
+                          <div className="flex items-center gap-1.5">
+                            <Select value={selectedNarrator} onValueChange={handleNarratorChange}>
+                              <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
+                                <SelectValue placeholder="Voz Humana" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HUMAN_NARRATORS.map((narrator) => (
+                                  <SelectItem key={narrator.id} value={narrator.id} className="text-xs">
+                                    🎙️ {narrator.name} ({narrator.version})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
 
                           {/* Progress Bar */}
                           {activeHumanAudioUrl && (
