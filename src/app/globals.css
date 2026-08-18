@@ -114,39 +114,61 @@
 
   /* Font size classes for reader - targeting nested elements to override prose */
   .reader-text-sm, .reader-text-sm p, .reader-text-sm span, .reader-text-sm div {
-    font-size: 0.95rem !important;
+    font-size: 1.05rem !important;
     line-height: 1.7 !important;
   }
   .reader-text-md, .reader-text-md p, .reader-text-md span, .reader-text-md div {
-    font-size: 1.15rem !important;
+    font-size: 1.25rem !important;
     line-height: 1.85 !important;
   }
   .reader-text-lg, .reader-text-lg p, .reader-text-lg span, .reader-text-lg div {
-    font-size: 1.35rem !important;
-    line-height: 1.95 !important;
+    font-size: 1.55rem !important;
+    line-height: 2.05 !important;
   }
   .reader-text-xl, .reader-text-xl p, .reader-text-xl span, .reader-text-xl div {
-    font-size: 1.6rem !important;
-    line-height: 2.1 !important;
-  }
-
-  @media (min-width: 768px) {
-    .reader-text-sm, .reader-text-sm p, .reader-text-sm span, .reader-text-sm div {
-      font-size: 1.05rem !important;
-      line-height: 1.75 !important;
-    }
-    .reader-text-md, .reader-text-md p, .reader-text-md span, .reader-text-md div {
-      font-size: 1.25rem !important;
-      line-height: 1.9 !important;
-    }
-    .reader-text-lg, .reader-text-lg p, .reader-text-lg span, .reader-text-lg div {
-      font-size: 1.5rem !important;
-      line-height: 2.05 !important;
-    }
-    .reader-text-xl, .reader-text-xl p, .reader-text-xl span, .reader-text-xl div {
-      font-size: 1.8rem !important;
-      line-height: 2.25 !important;
-    }
+    font-size: 1.95rem !important;
+    line-height: 2.3 !important;
   }
 }
+
+/* ==============================================================================
+   Bible Reader Dynamic Typography Engine
+   ============================================================================== */
+.bible-reader-text,
+.bible-reader-text p,
+.bible-reader-text span:not(.v):not(.v-num),
+.bible-reader-text div,
+.bible-reader-text .p,
+.bible-reader-text .q,
+.bible-reader-text .q1,
+.bible-reader-text .q2,
+.bible-reader-text .m,
+.bible-reader-text .d {
+  font-size: var(--bible-font-size, 1.25rem) !important;
+  line-height: var(--bible-line-height, 1.85) !important;
+}
+
+.bible-reader-text .v,
+.bible-reader-text .v-num,
+.bible-reader-text span.v {
+  font-size: calc(var(--bible-font-size, 1.25rem) * 0.58) !important;
+  color: hsl(var(--primary) / 0.75) !important;
+  font-weight: 700 !important;
+  vertical-align: super !important;
+  margin-right: 0.25em !important;
+  line-height: 1 !important;
+}
+
+.bible-reader-text h3,
+.bible-reader-text .s,
+.bible-reader-text .s1,
+.bible-reader-text .s2 {
+  font-size: calc(var(--bible-font-size, 1.25rem) * 1.2) !important;
+  line-height: 1.4 !important;
+  margin-top: 1.8rem !important;
+  margin-bottom: 0.8rem !important;
+  color: hsl(var(--primary)) !important;
+  font-weight: 700 !important;
+}
+
 

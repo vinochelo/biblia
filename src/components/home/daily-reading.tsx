@@ -25,7 +25,8 @@ import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 
-import { FontSizeControl, type FontSize } from "@/components/common/font-size-control";
+import { FontSizeControl, type FontSize, FONT_CONFIG } from "@/components/common/font-size-control";
+
 
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
@@ -1019,12 +1020,17 @@ export function DailyReading() {
 
                 {/* Bible text content */}
                  <div 
-                    className={`prose max-w-none font-body text-justify reader-text-${fontSize}`}
+                    className={`bible-reader-text reader-text-${fontSize} prose max-w-none font-body text-justify`}
+                    style={{
+                      '--bible-font-size': FONT_CONFIG[fontSize].fontSize,
+                      '--bible-line-height': FONT_CONFIG[fontSize].lineHeight,
+                    } as React.CSSProperties}
                     dangerouslySetInnerHTML={{ __html: htmlContent }}
                     ref={contentRef}
                     onMouseUp={handleSelection}
                     onTouchEnd={handleSelection}
                  />
+
               </div>
             )}
           </CardContent>

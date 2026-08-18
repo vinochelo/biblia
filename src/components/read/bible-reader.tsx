@@ -24,7 +24,8 @@ import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-
 import { trackApiCall, trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { getHumanAudioForChapter } from "@/lib/human-audio-map";
 import { NATURAL_VOICES, DEFAULT_AI_VOICE } from "@/lib/tts-voices";
-import { FontSizeControl, type FontSize } from "@/components/common/font-size-control";
+import { FontSizeControl, type FontSize, FONT_CONFIG } from "@/components/common/font-size-control";
+
 
 import {
   Select,
@@ -783,9 +784,14 @@ function BibleReaderContent() {
             {/* Texto Bíblico con tamaño dinámico */}
             <CardContent className="p-6 md:p-10">
               <div
-                className={`prose max-w-none text-justify reader-text-${fontSize} font-body`}
+                className={`bible-reader-text reader-text-${fontSize} prose max-w-none text-justify font-body select-text`}
+                style={{
+                  '--bible-font-size': FONT_CONFIG[fontSize].fontSize,
+                  '--bible-line-height': FONT_CONFIG[fontSize].lineHeight,
+                } as React.CSSProperties}
                 dangerouslySetInnerHTML={{ __html: chapterContent.content }}
               />
+
 
               {/* Botones al pie del capítulo */}
               <div className="flex items-center justify-between pt-10 mt-10 border-t border-border/40">

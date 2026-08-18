@@ -20,7 +20,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FontSizeControl, type FontSize } from "@/components/common/font-size-control";
+import { FontSizeControl, type FontSize, FONT_CONFIG } from "@/components/common/font-size-control";
+
 
 
 
@@ -604,12 +605,17 @@ const selection = window.getSelection();
 
                         <CardContent className="p-6 md:p-10">
                              <div 
-                                className={`prose max-w-none font-body leading-relaxed text-justify reader-text-${fontSize}`}
+                                className={`bible-reader-text reader-text-${fontSize} prose max-w-none font-body leading-relaxed text-justify`}
+                                style={{
+                                  '--bible-font-size': FONT_CONFIG[fontSize].fontSize,
+                                  '--bible-line-height': FONT_CONFIG[fontSize].lineHeight,
+                                } as React.CSSProperties}
                                 dangerouslySetInnerHTML={{ __html: htmlContent || ''}}
                                 ref={contentRef}
                                 onMouseUp={handleSelection}
                             />
                         </CardContent>
+
 
                     </Card>
                 )}
