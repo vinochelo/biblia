@@ -4,27 +4,37 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, Play, Pause, Rewind, RotateCcw } from 'lucide-react';
 import { type TTSOutput } from '@/ai/flows/tts-flow';
+import { getHumanAudioForChapter } from '@/lib/human-audio-map';
 
 interface AudioPlayerProps {
   text?: string | null;
+  chapterId?: string | null;
+  initialSrc?: string | null;
   fetcher?: (text: string) => Promise<TTSOutput | null>;
   onPlay?: () => void;
   autoPlay?: boolean;
   isLoading: boolean;
 }
 
-export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading: isParentLoading }: AudioPlayerProps) {
+export function AudioPlayer({
+  text,
+  chapterId,
+  initialSrc,
+  fetcher,
+  onPlay,
+  autoPlay = false,
+  isLoading: isParentLoading,
+}: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [audioSrc, setAudioSrc] = useState<string | null>(initialSrc || null);
   const [isFetching, setIsFetching] = useState(false);
   const [isCheckingCache, setIsCheckingCache] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<boolean>(false);
 
-  // Passive cache check on mount or when text changes (does NOT generate if missing)
+  // Passive check on mount / change
   useEffect(() => {
     setIsPlaying(false);
-    setAudioSrc(null);
     setIsFetching(false);
     abortRef.current = false;
 
@@ -32,6 +42,24 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       audioRef.current.pause();
     }
 
+    // 1. If explicit initialSrc provided, use it
+    if (initialSrc) {
+      setAudioSrc(initialSrc);
+      return;
+    }
+
+    // 2. If chapterId provided, check if human pre-recorded audio exists
+    if (chapterId) {
+      const humanAudio = getHumanAudioForChapter(chapterId);
+      if (humanAudio) {
+        setAudioSrc(humanAudio);
+        return;
+      }
+    }
+
+    setAudioSrc(null);
+
+    // 3. If text provided, check server cache passively
     if (text) {
       let isMounted = true;
       setIsCheckingCache(true);
@@ -39,7 +67,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       fetch("/api/tts?action=check-cache", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, generateIfMissing: false }),
+        body: JSON.stringify({ text, chapterId, generateIfMissing: false }),
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -56,7 +84,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
         isMounted = false;
       };
     }
-  }, [text]);
+  }, [text, chapterId, initialSrc]);
 
   const handlePlay = useCallback(() => {
     if (onPlay) {
@@ -79,7 +107,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
     const el = audioRef.current;
     if (!el) return;
 
-    // Case A: Audio URL already available in cache
+    // Case A: Audio URL already available (human pre-recorded or cloud cache)
     if (audioSrc) {
       if (isPlaying) {
         el.pause();
@@ -99,7 +127,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       return;
     }
 
-    // Case B: Audio URL needs on-demand generation (user clicked Play)
+    // Case B: Audio needs on-demand generation (user clicked Play)
     if (text && fetcher) {
       abortRef.current = false;
       setIsFetching(true);
@@ -174,10 +202,11 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       <Button variant="outline" size="icon" onClick={handleRewind} disabled={areControlsDisabled} aria-label="Retroceder 10 segundos">
         <Rewind className="h-5 w-5" />
       </Button>
-      <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || isFetching || isCheckingCache || !text} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
+      <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || isFetching || isCheckingCache || (!text && !audioSrc)} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
         {getIcon()}
       </Button>
     </div>
   );
 }
+
 

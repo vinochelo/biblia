@@ -22,17 +22,16 @@ async function generateAudioViaApi(
   text: string,
   onProgress: (msg: string) => void
 ): Promise<TTSOutput | null> {
-  // Step 1: Check cache / trigger generation
-  onProgress("Verificando...");
+  onProgress("Generando con IA Neuronal...");
   const checkRes = await fetch("/api/tts?action=check-cache", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, generateIfMissing: true }),
+    body: JSON.stringify({ text, generateIfMissing: true, forceAi: true }),
   });
 
   if (!checkRes.ok) {
     const err = await checkRes.json().catch(() => ({ error: checkRes.statusText }));
-    throw new Error(err.error || `Error (${checkRes.status}) verificando caché`);
+    throw new Error(err.error || `Error (${checkRes.status}) al generar audio`);
   }
 
   const checkData = await checkRes.json();
@@ -43,13 +42,13 @@ async function generateAudioViaApi(
 
   // If another process is already generating, wait and poll for the result
   if (checkData.status === "in_progress") {
-    onProgress("Generando audio en el servidor...");
+    onProgress("Generando en el servidor...");
     for (let p = 0; p < 15; p++) {
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 2000));
       const pollRes = await fetch("/api/tts?action=check-cache", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, generateIfMissing: false }),
+        body: JSON.stringify({ text, generateIfMissing: false, forceAi: true }),
       });
       if (pollRes.ok) {
         const pollData = await pollRes.json();
@@ -60,67 +59,9 @@ async function generateAudioViaApi(
     }
   }
 
-  // Step 2: Generate each chunk individually and collect PCM buffers
-  const chunks: string[] = checkData.chunks || [];
-  if (chunks.length === 0) {
-    throw new Error("No se encontraron fragmentos para generar");
-  }
-
-  const pcmParts: string[] = [];
-
-  for (let i = 0; i < chunks.length; i++) {
-    onProgress(`Generando ${i + 1}/${chunks.length}...`);
-    try {
-      const chunkRes = await fetch("/api/tts?action=generate-chunk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chunkText: chunks[i],
-          chunkIndex: i,
-          totalChunks: chunks.length,
-        }),
-      });
-
-      if (!chunkRes.ok) {
-        const err = await chunkRes.json().catch(() => ({ error: chunkRes.statusText }));
-        throw new Error(err.error || `Error de red (${chunkRes.status})`);
-      }
-
-      const res = await chunkRes.json();
-      if (res && res.pcmBase64) {
-        pcmParts.push(res.pcmBase64);
-      } else {
-        throw new Error("No se recibió buffer PCM del fragmento");
-      }
-    } catch (e: any) {
-      throw new Error(`Fragmento ${i + 1} falló: ${e.message || e}`);
-    }
-
-    if (i < chunks.length - 1) {
-      await new Promise((r) => setTimeout(r, 300));
-    }
-  }
-
-  // Step 3: Finalize - combine PCM in memory, convert to WAV, upload to Cloudinary & cache
-  onProgress("Guardando en la nube...");
-  try {
-    const finalizeRes = await fetch("/api/tts?action=finalize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, pcmParts }),
-    });
-
-    if (!finalizeRes.ok) {
-      const err = await finalizeRes.json().catch(() => ({ error: finalizeRes.statusText }));
-      throw new Error(err.error || `Error (${finalizeRes.status}) guardando audio`);
-    }
-
-    const finalData = await finalizeRes.json();
-    return { audio: finalData.audio };
-  } catch (e: any) {
-    throw new Error(e.message || "Error guardando audio");
-  }
+  throw new Error("La generación tardó demasiado. Inténtalo de nuevo.");
 }
+
 
 
 function DailyReadingPageContent() {

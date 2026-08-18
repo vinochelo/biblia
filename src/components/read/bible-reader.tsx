@@ -3,12 +3,14 @@
 import { getBooks, getChapters, getChapter } from "@/lib/actions";
 import { bibleVersions } from "@/lib/data";
 import type { Book, ChapterSummary, Chapter } from "@/lib/types";
-import { Loader2, Terminal, BookOpen, Play, Pause, Volume2, AlertCircle } from "lucide-react";
+import { Loader2, Terminal, BookOpen, Play, Pause, Volume2, AlertCircle, Mic, Sparkles } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { trackApiCall, trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
+import { getHumanAudioForChapter } from "@/lib/human-audio-map";
+
 
 import {
   Select,
@@ -120,21 +122,14 @@ function BibleReaderContent() {
   const contentRef = useRef<HTMLDivElement>(null);
 
   // TTS / Audio state
+  const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai'>('human');
   const [audioStatus, setAudioStatus] = useState<AudioStatus>('idle');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioProgress, setAudioProgress] = useState(0); // 0–100
-  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
-  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
-  const [hasPendingCloudSave, setHasPendingCloudSave] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  // Cache audio URL per chapter so we don't re-request
   const audioCache = useRef<Record<string, string>>({});
-  // Store pending PCM parts & text for retry if cloud save fails
-  const pendingPcmParts = useRef<string[]>([]);
-  const pendingText = useRef<string>('');
-  // Track blob URLs to revoke on chapter change
-  const blobUrlRef = useRef<string | null>(null);
+
 
 
   const handleVersionChange = (newVersion: string) => {
@@ -248,57 +243,69 @@ function BibleReaderContent() {
     }
   }, [selectedChapter, version, fetchChapterContent]);
 
-  // Reset audio state when chapter changes
+  // Reset & prepare audio state when chapter changes or source mode changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
     }
-    // Revoke old blob URL to free memory
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
     setAudioStatus('idle');
-    setAudioUrl(null);
     setAudioError(null);
     setAudioProgress(0);
-    setChunkProgress(null);
-    setIsSavingToCloud(false);
-    setHasPendingCloudSave(false);
-    pendingPcmParts.current = [];
-    pendingText.current = '';
-  }, [selectedChapter]);
 
-  // ── TTS Logic ──────────────────────────────────────────────────────────────
+    if (selectedChapter) {
+      if (audioSourceMode === 'human') {
+        const humanAudio = getHumanAudioForChapter(selectedChapter);
+        if (humanAudio) {
+          setAudioUrl(humanAudio);
+          return;
+        }
+      }
+    }
+    setAudioUrl(null);
+  }, [selectedChapter, audioSourceMode]);
+
+
+  // ── Audio Playback Logic ───────────────────────────────────────────────────
 
   const handlePlayAudio = async () => {
-    // If already have a URL loaded and paused, just resume
-    if (audioRef.current && audioUrl && audioStatus === 'paused') {
-      audioRef.current.play();
-      setAudioStatus('playing');
-      return;
-    }
-
-    // If playing, pause
+    // If already playing, pause
     if (audioRef.current && audioStatus === 'playing') {
       audioRef.current.pause();
       setAudioStatus('paused');
       return;
     }
 
-    // If we already cached the URL for this chapter, play directly
-    if (selectedChapter && audioCache.current[selectedChapter]) {
-      const cachedUrl = audioCache.current[selectedChapter];
-      setAudioUrl(cachedUrl);
-      setAudioStatus('playing');
-      if (audioRef.current) {
-        audioRef.current.src = cachedUrl;
-        audioRef.current.play();
+    // If loaded and paused, resume
+    if (audioRef.current && audioUrl && audioStatus === 'paused') {
+      try {
+        await audioRef.current.play();
+        setAudioStatus('playing');
+      } catch (e) {
+        console.error('Error resuming audio:', e);
       }
       return;
     }
 
+    // Case 1: Human Pre-recorded Audio
+    if (audioSourceMode === 'human' && selectedChapter) {
+      const humanUrl = getHumanAudioForChapter(selectedChapter);
+      if (humanUrl) {
+        setAudioUrl(humanUrl);
+        if (audioRef.current) {
+          audioRef.current.src = humanUrl;
+          try {
+            await audioRef.current.play();
+            setAudioStatus('playing');
+          } catch (e) {
+            console.error('Error playing human audio:', e);
+          }
+        }
+        return;
+      }
+    }
+
+    // Case 2: AI Voice (Edge Neural TTS / Cached Cloudinary)
     if (!chapterContent) return;
 
     const plainText = extractPlainTextFromBibleHtml(chapterContent.content);
@@ -308,56 +315,71 @@ function BibleReaderContent() {
       return;
     }
 
+    // Check local memory cache first
+    const cacheKey = `${selectedChapter || ''}_ai`;
+    if (audioCache.current[cacheKey]) {
+      const cachedUrl = audioCache.current[cacheKey];
+      setAudioUrl(cachedUrl);
+      if (audioRef.current) {
+        audioRef.current.src = cachedUrl;
+        await audioRef.current.play();
+        setAudioStatus('playing');
+      }
+      return;
+    }
+
     setAudioStatus('loading');
     setAudioError(null);
-    setChunkProgress(null);
 
     try {
-      // Step 1: Check cache / trigger generation
-      const cacheRes = await fetch('/api/tts?action=check-cache', {
+      const res = await fetch('/api/tts?action=check-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: plainText, generateIfMissing: true }),
+        body: JSON.stringify({
+          text: plainText,
+          chapterId: selectedChapter,
+          forceAi: true,
+          generateIfMissing: true,
+        }),
       });
 
-      if (!cacheRes.ok) {
-        const err = await cacheRes.json().catch(() => ({ error: `Error ${cacheRes.status}` }));
-        throw new Error(err.error || `Error ${cacheRes.status} al verificar caché`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `Error ${res.status}` }));
+        throw new Error(err.error || `Error ${res.status} al generar audio`);
       }
 
-      const cacheData = await cacheRes.json();
+      const data = await res.json();
 
-      if (cacheData.status === 'cached' && cacheData.audio) {
-        // Audio already cached — play directly
-        const url = cacheData.audio;
-        if (selectedChapter) audioCache.current[selectedChapter] = url;
+      if (data.status === 'cached' && data.audio) {
+        const url = data.audio;
+        audioCache.current[cacheKey] = url;
         setAudioUrl(url);
         if (audioRef.current) {
           audioRef.current.src = url;
-          audioRef.current.play();
+          await audioRef.current.play();
         }
         setAudioStatus('playing');
         return;
       }
 
-      // If another process is already generating, poll until ready
-      if (cacheData.status === 'in_progress') {
+      // If in progress from another user, poll
+      if (data.status === 'in_progress') {
         for (let p = 0; p < 15; p++) {
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 2000));
           const pollRes = await fetch('/api/tts?action=check-cache', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: plainText, generateIfMissing: false }),
+            body: JSON.stringify({ text: plainText, generateIfMissing: false, forceAi: true }),
           });
           if (pollRes.ok) {
             const pollData = await pollRes.json();
             if (pollData.status === 'cached' && pollData.audio) {
               const url = pollData.audio;
-              if (selectedChapter) audioCache.current[selectedChapter] = url;
+              audioCache.current[cacheKey] = url;
               setAudioUrl(url);
               if (audioRef.current) {
                 audioRef.current.src = url;
-                audioRef.current.play();
+                await audioRef.current.play();
               }
               setAudioStatus('playing');
               return;
@@ -366,163 +388,16 @@ function BibleReaderContent() {
         }
       }
 
-
-      // Step 2: Generate chunks
-      const chunks: string[] = cacheData.chunks || [];
-      if (chunks.length === 0) throw new Error('No se recibieron fragmentos de texto para procesar.');
-
-      setChunkProgress({ current: 0, total: chunks.length });
-
-      const pcmParts: string[] = [];
-
-      for (let i = 0; i < chunks.length; i++) {
-        setChunkProgress({ current: i + 1, total: chunks.length });
-
-        let attempts = 0;
-        const maxAttempts = 3;
-        let pcmBase64: string | null = null;
-
-        while (attempts < maxAttempts && pcmBase64 === null) {
-          attempts++;
-          const chunkRes = await fetch('/api/tts?action=generate-chunk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chunkText: chunks[i], chunkIndex: i, totalChunks: chunks.length }),
-          });
-
-          if (chunkRes.status === 429 && attempts < maxAttempts) {
-            // Rate limited — wait and retry
-            await new Promise(r => setTimeout(r, 5000 * attempts));
-            continue;
-          }
-
-          if (!chunkRes.ok) {
-            const err = await chunkRes.json().catch(() => ({ error: `Error ${chunkRes.status}` }));
-            throw new Error(err.error || `Error generando fragmento ${i + 1}`);
-          }
-
-          const chunkData = await chunkRes.json();
-          if (!chunkData.pcmBase64) throw new Error(`Fragmento ${i + 1} no retornó datos de audio.`);
-          pcmBase64 = chunkData.pcmBase64;
-        }
-
-        if (!pcmBase64) throw new Error(`No se pudo generar el fragmento ${i + 1} después de ${maxAttempts} intentos.`);
-        pcmParts.push(pcmBase64);
-      }
-
-      // Step 3: Reproducir inmediatamente desde el navegador (Blob URL local)
-      // Esto garantiza que el usuario escuche el audio aunque Cloudinary falle.
-      setChunkProgress(null);
-      const blobUrl = buildWavBlobUrl(pcmParts);
-      blobUrlRef.current = blobUrl;
-      setAudioUrl(blobUrl);
-      if (audioRef.current) {
-        audioRef.current.src = blobUrl;
-        audioRef.current.play();
-      }
-      setAudioStatus('playing');
-
-      // Guardar PCM parts y texto para posibles reintentos de guardado
-      pendingPcmParts.current = pcmParts;
-      pendingText.current = plainText;
-
-      // Step 4 (segundo plano): Subir a Cloudinary para caché permanente
-      setIsSavingToCloud(true);
-      (async () => {
-        const MAX_FINALIZE_ATTEMPTS = 3;
-        for (let attempt = 1; attempt <= MAX_FINALIZE_ATTEMPTS; attempt++) {
-          try {
-            const finalRes = await fetch('/api/tts?action=finalize', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: plainText, pcmParts }),
-            });
-            if (!finalRes.ok) {
-              const err = await finalRes.json().catch(() => ({ error: `Error ${finalRes.status}` }));
-              throw new Error(err.error || `Error finalizando (intento ${attempt})`);
-            }
-            const finalData = await finalRes.json();
-            if (finalData.audio) {
-              // Reemplazar blob URL con URL permanente de Cloudinary
-              if (selectedChapter) audioCache.current[selectedChapter] = finalData.audio;
-              // Actualizar src del audio solo si sigue reproduciendo el mismo audio
-              if (audioRef.current && blobUrlRef.current === blobUrl) {
-                const currentTime = audioRef.current.currentTime;
-                const wasPlaying = !audioRef.current.paused;
-                audioRef.current.src = finalData.audio;
-                audioRef.current.currentTime = currentTime;
-                if (wasPlaying) audioRef.current.play();
-                blobUrlRef.current = null;
-                URL.revokeObjectURL(blobUrl);
-              }
-              setAudioUrl(finalData.audio);
-              pendingPcmParts.current = [];
-              pendingText.current = '';
-              setHasPendingCloudSave(false);
-            }
-            break;
-          } catch (e: any) {
-            console.warn(`TTS finalize intento ${attempt}/${MAX_FINALIZE_ATTEMPTS} falló:`, e.message);
-            if (attempt < MAX_FINALIZE_ATTEMPTS) {
-              await new Promise(r => setTimeout(r, attempt * 5000));
-            } else {
-              console.error('TTS: No se pudo guardar en la nube. El audio se mantiene reproducible en esta sesión.');
-            }
-          }
-        }
-        setIsSavingToCloud(false);
-        // If we exhausted all attempts and still have pending parts, show retry button
-        if (pendingPcmParts.current.length > 0) {
-          setHasPendingCloudSave(true);
-        }
-      })();
-
+      throw new Error('El audio tardó demasiado en generarse. Inténtalo de nuevo.');
     } catch (e: any) {
       console.error('TTS error:', e);
-      setAudioError(e.message || 'Error desconocido al generar el audio.');
+      setAudioError(e.message || 'Error desconocido al generar audio.');
       setAudioStatus('error');
-      setChunkProgress(null);
-      setIsSavingToCloud(false);
     }
   };
 
-  /** Reintentar guardar en la nube los PCM que ya están en memoria */
-  const handleRetryCloudSave = async () => {
-    if (pendingPcmParts.current.length === 0 || !pendingText.current) return;
-    setIsSavingToCloud(true);
-    try {
-      const finalRes = await fetch('/api/tts?action=finalize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: pendingText.current, pcmParts: pendingPcmParts.current }),
-      });
-      if (!finalRes.ok) {
-        const err = await finalRes.json().catch(() => ({ error: `Error ${finalRes.status}` }));
-        throw new Error(err.error || 'Error al reintentar guardar');
-      }
-      const finalData = await finalRes.json();
-      if (finalData.audio) {
-        if (selectedChapter) audioCache.current[selectedChapter] = finalData.audio;
-        if (audioRef.current && blobUrlRef.current) {
-          const currentTime = audioRef.current.currentTime;
-          const wasPlaying = !audioRef.current.paused;
-          audioRef.current.src = finalData.audio;
-          audioRef.current.currentTime = currentTime;
-          if (wasPlaying) audioRef.current.play();
-          URL.revokeObjectURL(blobUrlRef.current);
-          blobUrlRef.current = null;
-        }
-        setAudioUrl(finalData.audio);
-        pendingPcmParts.current = [];
-        pendingText.current = '';
-        setHasPendingCloudSave(false);
-      }
-    } catch (e: any) {
-      console.error('TTS retry cloud save error:', e);
-    } finally {
-      setIsSavingToCloud(false);
-    }
-  };
+
+
 
   const handleAudioTimeUpdate = () => {
     if (!audioRef.current) return;
@@ -695,6 +570,36 @@ function BibleReaderContent() {
 
                           {/* ── Audio Player ── */}
                           <div className="flex flex-col items-end gap-2 shrink-0">
+                            {/* Source selector (Human vs AI) */}
+                            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg text-xs">
+                              <button
+                                type="button"
+                                onClick={() => setAudioSourceMode('human')}
+                                className={`px-2 py-1 rounded-md transition-colors flex items-center gap-1 ${
+                                  audioSourceMode === 'human'
+                                    ? 'bg-background text-foreground shadow-sm font-medium'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                                title="Narración oficial en español por Samuel Montoya (RVR 1909)"
+                              >
+                                <Mic className="h-3 w-3" />
+                                Humana
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAudioSourceMode('ai')}
+                                className={`px-2 py-1 rounded-md transition-colors flex items-center gap-1 ${
+                                  audioSourceMode === 'ai'
+                                    ? 'bg-background text-foreground shadow-sm font-medium'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                                title="Voz sintética neuronal de Microsoft Edge"
+                              >
+                                <Sparkles className="h-3 w-3" />
+                                IA Neuronal
+                              </button>
+                            </div>
+
                             {/* Main button */}
                             <Button
                               variant="outline"
@@ -706,9 +611,7 @@ function BibleReaderContent() {
                               {audioStatus === 'loading' ? (
                                 <>
                                   <Loader2 className="h-4 w-4 animate-spin" />
-                                  {chunkProgress
-                                    ? `Generando (${chunkProgress.current}/${chunkProgress.total})...`
-                                    : 'Preparando audio...'}
+                                  Generando audio...
                                 </>
                               ) : audioStatus === 'playing' ? (
                                 <>
@@ -728,7 +631,7 @@ function BibleReaderContent() {
                               ) : (
                                 <>
                                   <Volume2 className="h-4 w-4" />
-                                  Escuchar
+                                  Escuchar {audioSourceMode === 'human' ? 'Locución' : 'con IA'}
                                 </>
                               )}
                             </Button>
@@ -747,24 +650,6 @@ function BibleReaderContent() {
                               </div>
                             )}
 
-                            {/* Cloud saving indicator */}
-                            {isSavingToCloud && (
-                              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Guardando en la nube...
-                              </p>
-                            )}
-
-                            {/* Retry cloud save button (shown when audio plays locally but cloud save failed) */}
-                            {!isSavingToCloud && hasPendingCloudSave && audioUrl && (audioStatus === 'playing' || audioStatus === 'paused') && (
-                              <button
-                                onClick={handleRetryCloudSave}
-                                className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
-                              >
-                                ☁ Reintentar guardar en la nube
-                              </button>
-                            )}
-
                             {/* Error message */}
                             {audioStatus === 'error' && audioError && (
                               <p className="text-xs text-destructive text-right max-w-[200px]">{audioError}</p>
@@ -772,6 +657,7 @@ function BibleReaderContent() {
                           </div>
                         </div>
                     </CardHeader>
+
                     <CardContent>
                         <div
                             className="prose prose-lg max-w-none font-body leading-relaxed [&_p]:mb-4"

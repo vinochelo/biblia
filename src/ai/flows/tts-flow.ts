@@ -179,12 +179,29 @@ const ttsFlow = ai.defineFlow(
       return { audio: cachedUrl };
     }
 
-    // 2. Try ElevenLabs premium generation for the whole text in one call
+    // 2. Primary engine: Microsoft Edge Neural TTS (Fast, unlimited, high-quality)
+    try {
+      console.log(`TTS (EdgeTTS): Generando audio completo con voz ${TTS_VOICE}...`);
+      const { EdgeTTS } = require('@andresaya/edge-tts');
+      const edgeTts = new EdgeTTS();
+      await edgeTts.synthesize(normalizedText, 'es-MX-JorgeNeural');
+      const mp3Base64 = edgeTts.toBase64();
+
+      if (mp3Base64 && mp3Base64.length > 100) {
+        console.log(`TTS (EdgeTTS): Generación exitosa. Guardando en Cloudinary y Firebase...`);
+        const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
+        return { audio: downloadUrl };
+      }
+    } catch (edgeErr: any) {
+      console.warn("TTS (EdgeTTS) falló, pasando a fallbacks:", edgeErr?.message || edgeErr);
+    }
+
+    // 3. Fallback 1: Try ElevenLabs premium generation if configured
     const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
     if (elevenLabsApiKey) {
       try {
         const voiceId = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL"; // Sarah prebuilt
-        console.log(`TTS (Genkit Flow): Intentando generación premium completa con ElevenLabs (voz: ${voiceId})...`);
+        console.log(`TTS (ElevenLabs Fallback): Intentando generación con ElevenLabs (voz: ${voiceId})...`);
         
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
           method: "POST",
@@ -205,22 +222,19 @@ const ttsFlow = ai.defineFlow(
         if (response.ok) {
           const audioBuffer = await response.arrayBuffer();
           const mp3Base64 = Buffer.from(audioBuffer).toString("base64");
-          console.log("TTS (Genkit Flow): Generación ElevenLabs exitosa. Guardando en caché...");
+          console.log("TTS (ElevenLabs): Generación exitosa. Guardando en caché...");
           
           const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
           return { audio: downloadUrl };
-        } else {
-          const errText = await response.text();
-          console.warn(`TTS (Genkit Flow): ElevenLabs no disponible (status: ${response.status}). Usando fallback de Gemini por fragmentos...`);
         }
       } catch (e) {
-        console.error("TTS (Genkit Flow): Error llamando a ElevenLabs, usando fallback de Gemini...", e);
+        console.error("TTS (ElevenLabs): Error llamando a ElevenLabs...", e);
       }
     }
 
-    // 3. Fallback: Split text and generate chunk-by-chunk using Gemini
+    // 4. Fallback 2: Split text and generate chunk-by-chunk using Gemini
     const chunks = splitTextIntoChunks(normalizedText);
-    console.log(`TTS (Gemini): Cache miss. Texto dividido en ${chunks.length} fragmento(s) (${normalizedText.length} caracteres) - Procesando en paralelo con escalonamiento de 2s`);
+    console.log(`TTS (Gemini Fallback): Cache miss. Texto dividido en ${chunks.length} fragmento(s)`);
 
     const pcmBuffers = await Promise.all(
       chunks.map(async (chunk, index) => {
@@ -231,23 +245,16 @@ const ttsFlow = ai.defineFlow(
       })
     );
 
-    // Concatenar todos los buffers PCM puros
     const combinedPcmBuffer = Buffer.concat(pcmBuffers);
-
-    // Convertir a WAV
     const wavBase64 = await toWav(combinedPcmBuffer);
-    
-    // Guardar en cache
     const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, wavBase64);
-
-    const sizeKB = (Buffer.byteLength(wavBase64, 'base64') / 1024).toFixed(1);
-    console.log(`TTS (Gemini): Audio generado y cacheado - ${sizeKB} KB`);
 
     return {
       audio: downloadUrl,
     };
   }
 );
+
 
 export async function prepareTTS(text: string): Promise<{
   status: 'cached' | 'needs_generation';

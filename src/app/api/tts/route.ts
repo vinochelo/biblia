@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCachedAudio, cacheAudio, getCacheKey, isGeneratingAudio, setGeneratingLock, clearGeneratingLock } from "@/lib/audio-cache";
 import { executeWithGeminiKeyRotation } from "@/lib/gemini-keys";
+import { getHumanAudioForChapter } from "@/lib/human-audio-map";
+import { EdgeTTS } from "@andresaya/edge-tts";
 
-const MAX_CHUNK_LENGTH = 800;
-const TTS_MODEL = "gemini-2.5-flash-preview-tts";
-const TTS_VOICE = "Fenrir";
-const TTS_SAMPLE_RATE = 24000;
-const TTS_CHANNELS = 1;
-const TTS_SAMPLE_WIDTH = 2;
-
+const TTS_VOICE = "es-MX-JorgeNeural";
 const VERSE_NUMBER_PATTERN = /(?:^|\s)\d{1,3}\s/g;
 
 function normalizeTextForTTS(text: string): string {
@@ -19,233 +15,138 @@ function normalizeTextForTTS(text: string): string {
     .trim();
 }
 
-function splitTextIntoChunks(text: string): string[] {
-  if (text.length <= MAX_CHUNK_LENGTH) return [text];
-  const chunks: string[] = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= MAX_CHUNK_LENGTH) {
-      chunks.push(remaining);
-      break;
-    }
-    let splitIndex = -1;
-    const searchArea = remaining.substring(0, MAX_CHUNK_LENGTH);
-    for (let i = searchArea.length - 1; i >= 0; i--) {
-      if (".?!\n".includes(searchArea[i])) {
-        splitIndex = i + 1;
-        break;
-      }
-    }
-    if (splitIndex === -1) splitIndex = searchArea.lastIndexOf(" ");
-    if (splitIndex === -1) splitIndex = MAX_CHUNK_LENGTH;
-    chunks.push(remaining.substring(0, splitIndex).trim());
-    remaining = remaining.substring(splitIndex).trim();
-  }
-  return chunks.filter((c) => c.length > 0);
-}
-
-function pcmToWav(pcmBuffer: Buffer, sampleRate: number = 24000, numChannels: number = 1, bitDepth: number = 16): Buffer {
-  const header = Buffer.alloc(44);
-  
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcmBuffer.length, 4);
-  header.write("WAVE", 8);
-  
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(numChannels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * numChannels * (bitDepth / 8), 28);
-  header.writeUInt16LE(numChannels * (bitDepth / 8), 32);
-  header.writeUInt16LE(bitDepth, 34);
-  
-  header.write("data", 36);
-  header.writeUInt32LE(pcmBuffer.length, 40);
-  
-  return Buffer.concat([header, pcmBuffer]);
-}
-
-async function toWav(pcmData: Buffer): Promise<string> {
-  if (pcmData.length === 0) throw new Error("PCM buffer vacío");
-  const wavBuffer = pcmToWav(pcmData, TTS_SAMPLE_RATE, TTS_CHANNELS, TTS_SAMPLE_WIDTH * 8);
-  return wavBuffer.toString("base64");
-}
-
 /**
  * POST /api/tts?action=check-cache
- * Body: { text: string, generateIfMissing?: boolean }
- * Returns: 
- *   - { status: 'cached', audio: string }
- *   - { status: 'in_progress' } (when another user or task is generating it)
- *   - { status: 'not_cached' } (when generateIfMissing is false and not in cache)
- *   - { status: 'needs_generation', chunks: string[] } (when generateIfMissing is true and needs chunks)
+ * Body: { text?: string, chapterId?: string, forceAi?: boolean, generateIfMissing?: boolean }
  */
 async function handleCheckCache(body: any) {
-  const { text, generateIfMissing = false } = body;
-  if (!text) return NextResponse.json({ error: "Texto requerido" }, { status: 400 });
+  const { text, chapterId, forceAi = false, generateIfMissing = false } = body;
+
+  // 1. If human pre-recorded audio is available and not forced to AI, return it immediately
+  if (chapterId && !forceAi) {
+    const humanUrl = getHumanAudioForChapter(chapterId);
+    if (humanUrl) {
+      return NextResponse.json({
+        status: "cached",
+        audio: humanUrl,
+        isHuman: true,
+        narrator: "Samuel Montoya (RVR 1909)",
+      });
+    }
+  }
+
+  if (!text) {
+    return NextResponse.json({ error: "Texto o chapterId requerido" }, { status: 400 });
+  }
 
   const normalizedText = normalizeTextForTTS(text);
   if (!normalizedText) return NextResponse.json({ error: "Texto vacío" }, { status: 400 });
 
   const cacheKey = getCacheKey(normalizedText, TTS_VOICE);
 
-  // 1. Check if already cached in Firebase RTDB
+  // 2. Check if already cached in Firebase RTDB
   const cachedUrl = await getCachedAudio(normalizedText, TTS_VOICE);
   if (cachedUrl) {
-    return NextResponse.json({ status: "cached", audio: cachedUrl });
+    return NextResponse.json({ status: "cached", audio: cachedUrl, isHuman: false });
   }
 
-  // 2. Check if another user/process is currently generating this audio
+  // 3. Check if another user/process is currently generating this audio
   const inProgress = await isGeneratingAudio(cacheKey);
   if (inProgress) {
     return NextResponse.json({ status: "in_progress" });
   }
 
-  // If user only wanted a passive cache check (e.g. on page mount), do not start generating
+  // If user only wanted a passive cache check, do not generate
   if (!generateIfMissing) {
     return NextResponse.json({ status: "not_cached" });
   }
 
-  // 3. User explicitly requested generation: set lock
+  // 4. User clicked Play: Set lock and generate with Microsoft Edge Neural TTS
   await setGeneratingLock(cacheKey);
 
-  // 4. Try ElevenLabs premium generation for the whole text in one call
+  try {
+    console.log(`TTS API: Generando audio con Microsoft Edge Neural TTS (${TTS_VOICE})...`);
+    const edgeTts = new EdgeTTS();
+    await edgeTts.synthesize(normalizedText, TTS_VOICE);
+    const mp3Base64 = edgeTts.toBase64();
+
+    if (mp3Base64 && mp3Base64.length > 100) {
+      console.log(`TTS API: Síntesis con EdgeTTS exitosa (${mp3Base64.length} chars base64). Guardando en Cloudinary y Firebase...`);
+      const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
+      return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
+    }
+  } catch (edgeError: any) {
+    console.warn("TTS API: EdgeTTS falló, intentando con fallbacks...", edgeError?.message || edgeError);
+  }
+
+  // 5. Fallback 1: ElevenLabs if configured
   const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
   if (elevenLabsApiKey) {
     try {
-      const voiceId = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL"; // Sarah prebuilt
-      console.log(`TTS API: Intentando generación con ElevenLabs (voz: ${voiceId})...`);
-      
+      const voiceId = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL";
+      console.log(`TTS API: Intentando fallback con ElevenLabs (${voiceId})...`);
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": elevenLabsApiKey
-        },
-        body: JSON.stringify({
-          text: normalizedText,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: {
-            stability: 0.75,
-            similarity_boost: 0.85
-          }
-        })
+        headers: { "Content-Type": "application/json", "xi-api-key": elevenLabsApiKey },
+        body: JSON.stringify({ text: normalizedText, model_id: "eleven_multilingual_v2" }),
       });
 
       if (response.ok) {
         const audioBuffer = await response.arrayBuffer();
         const mp3Base64 = Buffer.from(audioBuffer).toString("base64");
-        console.log("TTS API: Generación ElevenLabs exitosa. Guardando en caché...");
-        
         const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
-        return NextResponse.json({ status: "cached", audio: downloadUrl });
-      } else {
-        const errText = await response.text();
-        console.warn(`TTS API: ElevenLabs no disponible (${response.status}): ${errText.substring(0, 100)}. Usando fallback de Gemini con rotación multi-key...`);
+        return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
       }
     } catch (e) {
-      console.error("TTS API: Error llamando a ElevenLabs, usando fallback de Gemini...", e);
+      console.error("TTS API: Error llamando a ElevenLabs fallback:", e);
     }
   }
 
-  // 5. Fallback: Split text and return chunks for Gemini generation
-  const chunks = splitTextIntoChunks(normalizedText);
-  return NextResponse.json({ status: "needs_generation", chunks });
-}
-
-/**
- * POST /api/tts?action=generate-chunk
- * Body: { chunkText: string, chunkIndex: number, totalChunks: number }
- * Returns: { pcmBase64: string }
- */
-async function handleGenerateChunk(body: any) {
-  const { chunkText, chunkIndex, totalChunks } = body;
-  if (!chunkText) return NextResponse.json({ error: "chunkText requerido" }, { status: 400 });
-
+  // 6. Fallback 2: Gemini 2.5 Flash TTS with smart key rotation
   try {
-    const pcmBase64 = await executeWithGeminiKeyRotation(
-      async (apiKey) => {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: chunkText }] }],
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: TTS_VOICE },
-                },
-              },
-            },
-          }),
-        });
+    console.log("TTS API: Intentando fallback con Gemini 2.5 Flash TTS...");
+    const pcmBase64 = await executeWithGeminiKeyRotation(async (apiKey) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: normalizedText.substring(0, 1000) }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Fenrir" } } },
+          },
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      return data.candidates[0].content.parts[0].inlineData.data;
+    }, { label: "Gemini TTS Fallback" });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`HTTP ${res.status}: ${errText}`);
-        }
-
-        const data = await res.json();
-        const part = data.candidates?.[0]?.content?.parts?.[0];
-        if (!part?.inlineData?.data) {
-          throw new Error("API no retornó datos de audio inlineData");
-        }
-
-        return part.inlineData.data as string;
-      },
-      { label: `TTS Chunk ${chunkIndex + 1}/${totalChunks}` }
-    );
-
-    return NextResponse.json({ pcmBase64 });
-  } catch (error: any) {
-    console.error(`TTS Chunk ${chunkIndex + 1} falló en todas las claves:`, error);
+    if (pcmBase64) {
+      const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, pcmBase64);
+      return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
+    }
+  } catch (geminiError: any) {
+    console.error("TTS API: Fallback Gemini falló:", geminiError?.message || geminiError);
+    await clearGeneratingLock(cacheKey);
     return NextResponse.json(
-      { error: `Error generando fragmento ${chunkIndex + 1}: ${error?.message || error}` },
+      { error: `No se pudo generar el audio: ${geminiError?.message || geminiError}` },
       { status: 500 }
     );
   }
-}
 
-
-/**
- * POST /api/tts?action=finalize
- * Body: { text: string, pcmParts: string[] }
- * Returns: { audio: string }
- */
-async function handleFinalize(body: any) {
-  const { text, pcmParts } = body;
-  if (!text || !pcmParts || !Array.isArray(pcmParts)) {
-    return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
-  }
-
-  const normalizedText = normalizeTextForTTS(text);
-  const pcmBuffers = pcmParts.map((base64: string) => Buffer.from(base64, "base64"));
-  const combinedPcmBuffer = Buffer.concat(pcmBuffers);
-  const wavBase64 = await toWav(combinedPcmBuffer);
-  const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, wavBase64);
-  return NextResponse.json({ audio: downloadUrl });
+  await clearGeneratingLock(cacheKey);
+  return NextResponse.json({ error: "Error desconocido al sintetizar audio" }, { status: 500 });
 }
 
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action");
+  const action = searchParams.get("action") || "check-cache";
 
   try {
     const body = await request.json();
-
-    switch (action) {
-      case "check-cache":
-        return handleCheckCache(body);
-      case "generate-chunk":
-        return handleGenerateChunk(body);
-      case "finalize":
-        return handleFinalize(body);
-      default:
-        return NextResponse.json({ error: `Acción desconocida: ${action}` }, { status: 400 });
-    }
+    return handleCheckCache(body);
   } catch (e: any) {
     console.error("TTS API error:", e);
     return NextResponse.json({ error: e.message || "Error interno" }, { status: 500 });
