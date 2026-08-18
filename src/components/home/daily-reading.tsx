@@ -962,21 +962,11 @@ export function DailyReading() {
                             </Button>
                           </div>
 
-                          {/* Narrator Picker */}
-                          <div className="flex items-center gap-1.5">
-                            <Select value={selectedNarrator} onValueChange={handleNarratorChange}>
-                              <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
-                                <SelectValue placeholder="Voz Humana" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {HUMAN_NARRATORS.map((narrator) => (
-                                  <SelectItem key={narrator.id} value={narrator.id} className="text-xs">
-                                    🎙️ {narrator.name} ({narrator.version})
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                          {/* Narrator Badge */}
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            🎙️ <strong className="text-foreground font-medium">Samuel Montoya</strong> (RVR 1909)
+                          </span>
+
 
                           {/* Progress Bar */}
                           {activeHumanAudioUrl && (

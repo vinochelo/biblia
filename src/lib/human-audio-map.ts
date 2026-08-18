@@ -1208,19 +1208,7 @@ export const HUMAN_NARRATORS: HumanNarrator[] = [
     id: "samuel-montoya",
     name: "Samuel Montoya",
     version: "RVR 1909",
-    description: "Narración clásica y solemne",
-  },
-  {
-    id: "rv60",
-    name: "Reina Valera 1960",
-    version: "RVR 1960",
-    description: "Narración estándar y contemporánea",
-  },
-  {
-    id: "wordproject",
-    name: "Español Neutro",
-    version: "Wordproject",
-    description: "Lectura continua fluida",
+    description: "Narración oficial, clásica y solemne de radiofonía bíblica",
   },
 ];
 
@@ -1237,32 +1225,10 @@ const BOOK_ORDER: Record<string, number> = {
 /**
  * Obtiene la URL directa del audio pregrabado con voz humana para un capítulo específico.
  * @param chapterId Identificador del capítulo (ej. "GEN.1", "PSA.23", "MAT.28", "JHN.3")
- * @param narratorId ID del narrador ('samuel-montoya' | 'rv60' | 'wordproject')
  * @returns URL del archivo MP3 o null si no está disponible
  */
 export function getHumanAudioForChapter(chapterId: string, narratorId = 'samuel-montoya'): string | null {
   if (!chapterId) return null;
   const normalizedKey = chapterId.toUpperCase().trim();
-
-  if (narratorId === 'rv60') {
-    const [book, chStr] = normalizedKey.split('.');
-    const bookIndex = BOOK_ORDER[book];
-    const chNum = parseInt(chStr, 10);
-    if (!bookIndex || isNaN(chNum)) return null;
-    const bStr = String(bookIndex).padStart(2, '0');
-    const cStr = String(chNum).padStart(3, '0');
-    return `https://archive.org/download/RV60_202010/RV60_B${bStr}C${cStr}.mp3`;
-  }
-
-  if (narratorId === 'wordproject') {
-    const [book, chStr] = normalizedKey.split('.');
-    const bookIndex = BOOK_ORDER[book];
-    const chNum = parseInt(chStr, 10);
-    if (!bookIndex || isNaN(chNum)) return null;
-    return `https://www.wordproaudio.net/bibles/app/audio/6/${bookIndex}/${chNum}.mp3`;
-  }
-
-  // Por defecto: Samuel Montoya (RVR 1909)
   return RVR09_HUMAN_AUDIO_MAP[normalizedKey] || null;
 }
-

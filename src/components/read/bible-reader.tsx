@@ -619,19 +619,11 @@ function BibleReaderContent() {
                             {/* Source selector (Human vs AI) */}
                             <div className="flex flex-wrap items-center justify-end gap-2">
                               {audioSourceMode === 'human' && (
-                                <Select value={selectedNarrator} onValueChange={handleNarratorChange}>
-                                  <SelectTrigger className="h-7 text-xs w-[170px] bg-background">
-                                    <SelectValue placeholder="Voz Humana" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {HUMAN_NARRATORS.map((n) => (
-                                      <SelectItem key={n.id} value={n.id} className="text-xs">
-                                        🎙️ {n.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  🎙️ <strong className="text-foreground font-medium">Samuel Montoya</strong> (RVR 1909)
+                                </span>
                               )}
+
 
                               {audioSourceMode === 'ai' && (
                                 <Select value={selectedAiVoice} onValueChange={handleAiVoiceChange}>

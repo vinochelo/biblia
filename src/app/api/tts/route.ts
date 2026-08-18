@@ -53,6 +53,43 @@ async function synthesizeFullWithEdgeTTS(text: string, voice = TTS_VOICE): Promi
   return Buffer.concat(mp3Buffers).toString('base64');
 }
 
+async function synthesizeWithGoogleTTS(text: string, voice = 'es'): Promise<string> {
+  const lang = voice.includes('ES') ? 'es-ES' : (voice.includes('AR') ? 'es-AR' : 'es');
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (!trimmed) continue;
+    if ((currentChunk + ' ' + trimmed).length < 180) {
+      currentChunk += (currentChunk ? ' ' : '') + trimmed;
+    } else {
+      if (currentChunk) chunks.push(currentChunk);
+      currentChunk = trimmed;
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+
+  const buffers: Buffer[] = [];
+  for (const chunk of chunks) {
+    const encoded = encodeURIComponent(chunk);
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encoded}`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    if (res.ok) {
+      const ab = await res.arrayBuffer();
+      buffers.push(Buffer.from(ab));
+    }
+  }
+
+  if (buffers.length === 0) throw new Error("Google TTS no devolvió fragmentos");
+  return Buffer.concat(buffers).toString('base64');
+}
+
 /**
  * POST /api/tts?action=check-cache
  * Body: { text?: string, chapterId?: string, forceAi?: boolean, generateIfMissing?: boolean }
@@ -100,7 +137,7 @@ async function handleCheckCache(body: any) {
     return NextResponse.json({ status: "not_cached" });
   }
 
-  // 4. User clicked Play: Set lock and generate with Microsoft Edge Neural TTS
+  // 4. User clicked Play: Set lock and generate with Microsoft Edge Neural TTS or Google TTS
   await setGeneratingLock(cacheKey);
 
   try {
@@ -113,10 +150,18 @@ async function handleCheckCache(body: any) {
       return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
     }
   } catch (edgeError: any) {
-    console.warn("TTS API: EdgeTTS falló, intentando con fallbacks...", edgeError?.message || edgeError);
+    console.warn("TTS API: EdgeTTS falló en el servidor, usando fallback de Google TTS...", edgeError?.message || edgeError);
+    try {
+      const googleMp3Base64 = await synthesizeWithGoogleTTS(normalizedText, targetVoice);
+      if (googleMp3Base64 && googleMp3Base64.length > 100) {
+        console.log(`TTS API: Síntesis con Google TTS exitosa (${googleMp3Base64.length} chars). Guardando en Cloudinary y Firebase...`);
+        const downloadUrl = await cacheAudio(normalizedText, targetVoice, googleMp3Base64);
+        return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
+      }
+    } catch (gErr: any) {
+      console.warn("TTS API: Google TTS falló también:", gErr?.message || gErr);
+    }
   }
-
-
 
   // 5. Fallback 1: ElevenLabs if configured
   const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
@@ -133,7 +178,7 @@ async function handleCheckCache(body: any) {
       if (response.ok) {
         const audioBuffer = await response.arrayBuffer();
         const mp3Base64 = Buffer.from(audioBuffer).toString("base64");
-        const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
+        const downloadUrl = await cacheAudio(normalizedText, targetVoice, mp3Base64);
         return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
       }
     } catch (e) {
@@ -142,6 +187,7 @@ async function handleCheckCache(body: any) {
   }
 
   await clearGeneratingLock(cacheKey);
+
   return NextResponse.json(
     {
       error: "La generación con IA no está disponible temporalmente. Puedes usar la Locución Humana oficial de Samuel Montoya o el lector de tu navegador.",
