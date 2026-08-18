@@ -139,43 +139,15 @@ async function handleCheckCache(body: any) {
     }
   }
 
-  // 6. Fallback 2: Gemini 2.5 Flash TTS with smart key rotation
-  try {
-    console.log("TTS API: Intentando fallback con Gemini 2.5 Flash TTS...");
-    const pcmBase64 = await executeWithGeminiKeyRotation(async (apiKey) => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: normalizedText.substring(0, 1000) }] }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Fenrir" } } },
-          },
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-      const data = await res.json();
-      return data.candidates[0].content.parts[0].inlineData.data;
-    }, { label: "Gemini TTS Fallback" });
-
-    if (pcmBase64) {
-      const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, pcmBase64);
-      return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
-    }
-  } catch (geminiError: any) {
-    console.error("TTS API: Fallback Gemini falló:", geminiError?.message || geminiError);
-    await clearGeneratingLock(cacheKey);
-    return NextResponse.json(
-      { error: `No se pudo generar el audio: ${geminiError?.message || geminiError}` },
-      { status: 500 }
-    );
-  }
-
   await clearGeneratingLock(cacheKey);
-  return NextResponse.json({ error: "Error desconocido al sintetizar audio" }, { status: 500 });
+  return NextResponse.json(
+    {
+      error: "La generación con IA no está disponible temporalmente. Puedes usar la Locución Humana oficial de Samuel Montoya o el lector de tu navegador.",
+    },
+    { status: 503 }
+  );
 }
+
 
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);

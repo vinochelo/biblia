@@ -160,6 +160,45 @@ async function generateSingleChunk(
 
 
 
+function splitTextForEdgeTTS(text: string, maxLen = 2500): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining);
+      break;
+    }
+    let splitIdx = -1;
+    const searchArea = remaining.substring(0, maxLen);
+    for (let i = searchArea.length - 1; i >= 0; i--) {
+      if ('.!?\n'.includes(searchArea[i])) {
+        splitIdx = i + 1;
+        break;
+      }
+    }
+    if (splitIdx === -1) splitIdx = searchArea.lastIndexOf(' ');
+    if (splitIdx === -1) splitIdx = maxLen;
+    chunks.push(remaining.substring(0, splitIdx).trim());
+    remaining = remaining.substring(splitIdx).trim();
+  }
+  return chunks.filter(c => c.length > 0);
+}
+
+async function synthesizeFullWithEdgeTTS(text: string, voice = 'es-MX-JorgeNeural'): Promise<string> {
+  const chunks = splitTextForEdgeTTS(text, 2500);
+  const mp3Buffers: Buffer[] = [];
+  const { EdgeTTS } = require('@andresaya/edge-tts');
+
+  for (const chunk of chunks) {
+    const edgeTts = new EdgeTTS();
+    await edgeTts.synthesize(chunk, voice);
+    mp3Buffers.push(edgeTts.toBuffer());
+  }
+
+  return Buffer.concat(mp3Buffers).toString('base64');
+}
+
 const ttsFlow = ai.defineFlow(
   {
     name: 'ttsFlow',
@@ -181,11 +220,8 @@ const ttsFlow = ai.defineFlow(
 
     // 2. Primary engine: Microsoft Edge Neural TTS (Fast, unlimited, high-quality)
     try {
-      console.log(`TTS (EdgeTTS): Generando audio completo con voz ${TTS_VOICE}...`);
-      const { EdgeTTS } = require('@andresaya/edge-tts');
-      const edgeTts = new EdgeTTS();
-      await edgeTts.synthesize(normalizedText, 'es-MX-JorgeNeural');
-      const mp3Base64 = edgeTts.toBase64();
+      console.log(`TTS (EdgeTTS): Generando audio con Microsoft Edge Neural TTS...`);
+      const mp3Base64 = await synthesizeFullWithEdgeTTS(normalizedText, 'es-MX-JorgeNeural');
 
       if (mp3Base64 && mp3Base64.length > 100) {
         console.log(`TTS (EdgeTTS): Generación exitosa. Guardando en Cloudinary y Firebase...`);
@@ -195,6 +231,7 @@ const ttsFlow = ai.defineFlow(
     } catch (edgeErr: any) {
       console.warn("TTS (EdgeTTS) falló, pasando a fallbacks:", edgeErr?.message || edgeErr);
     }
+
 
     // 3. Fallback 1: Try ElevenLabs premium generation if configured
     const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
