@@ -11,6 +11,7 @@ import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { getHumanAudioForChapter, HUMAN_NARRATORS } from "@/lib/human-audio-map";
+import { NATURAL_VOICES, DEFAULT_AI_VOICE } from "@/lib/tts-voices";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
@@ -18,7 +19,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
 
 const bookToId: { [key: string]: string } = {
   "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -54,13 +54,14 @@ function parsePassageToChapterIds(passage: string): string[] {
 
 async function generateAudioViaApi(
   text: string,
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
+  voice = DEFAULT_AI_VOICE
 ): Promise<TTSOutput | null> {
   onProgress("Generando con IA Neuronal...");
   const checkRes = await fetch("/api/tts?action=check-cache", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, generateIfMissing: true, forceAi: true }),
+    body: JSON.stringify({ text, generateIfMissing: true, forceAi: true, voice }),
   });
 
   if (!checkRes.ok) {
@@ -82,7 +83,7 @@ async function generateAudioViaApi(
       const pollRes = await fetch("/api/tts?action=check-cache", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, generateIfMissing: false, forceAi: true }),
+        body: JSON.stringify({ text, generateIfMissing: false, forceAi: true, voice }),
       });
       if (pollRes.ok) {
         const pollData = await pollRes.json();
@@ -95,6 +96,7 @@ async function generateAudioViaApi(
 
   throw new Error("La generación tardó demasiado. Inténtalo de nuevo.");
 }
+
 
 function DailyReadingPageContent() {
     const searchParams = useSearchParams();
@@ -111,10 +113,14 @@ function DailyReadingPageContent() {
     const [error, setError] = useState<string | null>(null);
     const [audioError, setAudioError] = useState<string | null>(null);
 
-    // Human audio state
+    // Human & AI audio state
     const [selectedNarrator, setSelectedNarrator] = useState<string>(() => {
         if (typeof window === "undefined") return "samuel-montoya";
         return localStorage.getItem("preferred_human_narrator") || "samuel-montoya";
+    });
+    const [selectedAiVoice, setSelectedAiVoice] = useState<string>(() => {
+        if (typeof window === "undefined") return DEFAULT_AI_VOICE;
+        return localStorage.getItem("preferred_ai_voice") || DEFAULT_AI_VOICE;
     });
     const [dailyChapters, setDailyChapters] = useState<{ id: string; reference: string; audioUrl: string | null }[]>([]);
     const [activeChapterIndex, setActiveChapterIndex] = useState(0);
@@ -122,6 +128,7 @@ function DailyReadingPageContent() {
     const [isHumanPlaying, setIsHumanPlaying] = useState(false);
     const [humanProgress, setHumanProgress] = useState(0);
     const humanAudioRef = useRef<HTMLAudioElement | null>(null);
+
 
     // Auto-dismiss audio errors after 8 seconds
     useEffect(() => {
@@ -313,7 +320,7 @@ function DailyReadingPageContent() {
         setAudioProgress("Iniciando con IA...");
         setAudioError(null);
         try {
-            const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
+            const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg), selectedAiVoice);
             return result;
         } catch (e: any) {
             const errorMessage = e.message || 'Error generando audio.';
@@ -323,7 +330,8 @@ function DailyReadingPageContent() {
             setIsAudioLoading(false);
             setAudioProgress(null);
         }
-    }, []);
+    }, [selectedAiVoice]);
+
 
 
     const handleSelection = () => {
@@ -540,7 +548,8 @@ const selection = window.getSelection();
 
                             {/* Mode 2: AI Neural Voice Controls */}
                             {audioSourceMode === 'ai' && (
-                              <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                              <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/40">
+                                <div className="flex items-center gap-2">
                                   <AudioPlayer
                                       text={textContent}
                                       fetcher={handleAudioGeneration}
@@ -548,10 +557,35 @@ const selection = window.getSelection();
                                       isLoading={isAudioLoading}
                                   />
                                   <span className="text-xs md:text-sm font-medium text-muted-foreground">
-                                    {isAudioLoading ? (audioProgress || "Generando audio...") : "IA Neuronal (Microsoft Edge)"}
+                                    {isAudioLoading ? (audioProgress || "Generando audio...") : "Voz IA:"}
                                   </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <Select
+                                    value={selectedAiVoice}
+                                    onValueChange={(val) => {
+                                      setSelectedAiVoice(val);
+                                      if (typeof window !== "undefined") {
+                                        localStorage.setItem("preferred_ai_voice", val);
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
+                                      <SelectValue placeholder="Seleccionar voz IA" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {NATURAL_VOICES.map((v) => (
+                                        <SelectItem key={v.id} value={v.id} className="text-xs">
+                                          {v.icon} {v.name} ({v.country})
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               </div>
                             )}
+
                         </CardHeader>
 
                         <CardContent>

@@ -14,6 +14,7 @@ import { AudioPlayer } from "@/components/common/audio-player";
 import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { getHumanAudioForChapter, HUMAN_NARRATORS } from "@/lib/human-audio-map";
+import { NATURAL_VOICES, DEFAULT_AI_VOICE } from "@/lib/tts-voices";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -29,6 +30,7 @@ const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
 const BROWSER_VOICE_RATE_KEY = 'browser-tts-rate';
 const FONT_SIZE_KEY = 'reader-font-size';
 const HUMAN_NARRATOR_KEY = 'preferred_human_narrator';
+const AI_VOICE_KEY = 'preferred_ai_voice';
 
 type FontSize = 'sm' | 'md' | 'lg';
 const FONT_SIZE_LABELS: Record<FontSize, string> = { sm: 'Pequeña', md: 'Mediana', lg: 'Grande' };
@@ -68,17 +70,15 @@ function parsePassageToChapterIds(passage: string): string[] {
   return [];
 }
 
-// --- Helper: Fetch a single chapter from API route with retry ---
-async function fetchChapterWithRetry(chapterId: string, version: string, retries = 3): Promise<{ reference: string; content: string }> {
+async function fetchChapterWithRetry(chapterId: string, versionId: string, retries = 2) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(`/api/passages?chapterId=${encodeURIComponent(chapterId)}&version=${encodeURIComponent(version)}`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-      return await res.json();
-    } catch (e: any) {
+      const res = await fetch(`/api/passages?chapterId=${encodeURIComponent(chapterId)}&versionId=${encodeURIComponent(versionId)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    } catch (e) {
       if (attempt === retries) throw e;
       await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
@@ -89,13 +89,14 @@ async function fetchChapterWithRetry(chapterId: string, version: string, retries
 // --- Helper: Full TTS via API Routes ---
 async function generateAudioViaApi(
   text: string,
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
+  voice = DEFAULT_AI_VOICE
 ): Promise<TTSOutput | null> {
   onProgress("Generando con IA Neuronal...");
   const checkRes = await fetch("/api/tts?action=check-cache", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, generateIfMissing: true, forceAi: true }),
+    body: JSON.stringify({ text, generateIfMissing: true, forceAi: true, voice }),
   });
 
   if (!checkRes.ok) {
@@ -117,7 +118,7 @@ async function generateAudioViaApi(
       const pollRes = await fetch("/api/tts?action=check-cache", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, generateIfMissing: false, forceAi: true }),
+        body: JSON.stringify({ text, generateIfMissing: false, forceAi: true, voice }),
       });
       if (pollRes.ok) {
         const pollData = await pollRes.json();
@@ -157,12 +158,17 @@ export function DailyReading() {
     if (typeof window === "undefined") return "samuel-montoya";
     return localStorage.getItem(HUMAN_NARRATOR_KEY) || "samuel-montoya";
   });
+  const [selectedAiVoice, setSelectedAiVoice] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_AI_VOICE;
+    return localStorage.getItem(AI_VOICE_KEY) || DEFAULT_AI_VOICE;
+  });
   const [dailyChapters, setDailyChapters] = useState<{ id: string; reference: string; audioUrl: string | null }[]>([]);
   const [activeChapterIndex, setActiveChapterIndex] = useState(0);
   const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai' | 'browser'>('human');
   const [isHumanPlaying, setIsHumanPlaying] = useState(false);
   const [humanProgress, setHumanProgress] = useState(0);
   const humanAudioRef = useRef<HTMLAudioElement | null>(null);
+
 
 
   const { isCompleted, toggleComplete } = useStudyProgress();
@@ -594,7 +600,7 @@ export function DailyReading() {
     setAudioProgress("Iniciando con IA...");
     setAudioError(null);
     try {
-      const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
+      const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg), selectedAiVoice);
       return result;
     } catch (e: any) {
       const errorMessage = e.message || 'Error generando audio.';
@@ -604,7 +610,8 @@ export function DailyReading() {
       setIsAudioLoading(false);
       setAudioProgress(null);
     }
-  }, []);
+  }, [selectedAiVoice]);
+
 
 
   const handleSelection = () => {
@@ -986,18 +993,44 @@ export function DailyReading() {
 
                     {/* Mode 2: AI Neural Voice Controls */}
                     {audioSourceMode === 'ai' && (
-                      <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                      <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/40">
+                        <div className="flex items-center gap-2">
                           <AudioPlayer
-                              text={textContent}
-                              fetcher={handleAudioGeneration}
-                              onPlay={() => trackAiApiCall('tts')}
-                              isLoading={isAudioLoading}
+                            text={textContent}
+                            fetcher={handleAudioGeneration}
+                            onPlay={() => trackAiApiCall('tts')}
+                            isLoading={isAudioLoading}
                           />
                           <span className="text-xs md:text-sm font-medium text-muted-foreground">
-                            {isAudioLoading ? (audioProgress || "Generando...") : "IA Neuronal (Microsoft Edge)"}
+                            {isAudioLoading ? (audioProgress || "Generando audio...") : "Voz IA:"}
                           </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <Select
+                            value={selectedAiVoice}
+                            onValueChange={(val) => {
+                              setSelectedAiVoice(val);
+                              if (typeof window !== "undefined") {
+                                localStorage.setItem(AI_VOICE_KEY, val);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs w-[220px] bg-background">
+                              <SelectValue placeholder="Seleccionar voz IA" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {NATURAL_VOICES.map((v) => (
+                                <SelectItem key={v.id} value={v.id} className="text-xs">
+                                  {v.icon} {v.name} ({v.country})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                     )}
+
 
                     {/* Mode 3: Browser TTS Controls */}
                     {audioSourceMode === 'browser' && isBrowserTtsSupported && (

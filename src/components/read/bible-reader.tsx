@@ -10,6 +10,8 @@ import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { trackApiCall, trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 import { getHumanAudioForChapter, HUMAN_NARRATORS } from "@/lib/human-audio-map";
+import { NATURAL_VOICES, DEFAULT_AI_VOICE } from "@/lib/tts-voices";
+
 
 
 
@@ -127,6 +129,10 @@ function BibleReaderContent() {
     if (typeof window === "undefined") return "samuel-montoya";
     return localStorage.getItem("preferred_human_narrator") || "samuel-montoya";
   });
+  const [selectedAiVoice, setSelectedAiVoice] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_AI_VOICE;
+    return localStorage.getItem("preferred_ai_voice") || DEFAULT_AI_VOICE;
+  });
   const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai'>('human');
   const [audioStatus, setAudioStatus] = useState<AudioStatus>('idle');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -151,6 +157,20 @@ function BibleReaderContent() {
       }
     }
   };
+
+  const handleAiVoiceChange = (voiceId: string) => {
+    setSelectedAiVoice(voiceId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("preferred_ai_voice", voiceId);
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setAudioStatus('idle');
+    setAudioUrl(null);
+    setAudioProgress(0);
+  };
+
 
 
 
@@ -340,7 +360,7 @@ function BibleReaderContent() {
     }
 
     // Check local memory cache first
-    const cacheKey = `${selectedChapter || ''}_ai`;
+    const cacheKey = `${selectedChapter || ''}_ai_${selectedAiVoice}`;
     if (audioCache.current[cacheKey]) {
       const cachedUrl = audioCache.current[cacheKey];
       setAudioUrl(cachedUrl);
@@ -364,6 +384,7 @@ function BibleReaderContent() {
           chapterId: selectedChapter,
           forceAi: true,
           generateIfMissing: true,
+          voice: selectedAiVoice,
         }),
       });
 
@@ -393,7 +414,7 @@ function BibleReaderContent() {
           const pollRes = await fetch('/api/tts?action=check-cache', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: plainText, generateIfMissing: false, forceAi: true }),
+            body: JSON.stringify({ text: plainText, generateIfMissing: false, forceAi: true, voice: selectedAiVoice }),
           });
           if (pollRes.ok) {
             const pollData = await pollRes.json();
@@ -419,6 +440,7 @@ function BibleReaderContent() {
       setAudioStatus('error');
     }
   };
+
 
 
 
@@ -610,6 +632,22 @@ function BibleReaderContent() {
                                   </SelectContent>
                                 </Select>
                               )}
+
+                              {audioSourceMode === 'ai' && (
+                                <Select value={selectedAiVoice} onValueChange={handleAiVoiceChange}>
+                                  <SelectTrigger className="h-7 text-xs w-[190px] bg-background">
+                                    <SelectValue placeholder="Voz IA" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {NATURAL_VOICES.map((v) => (
+                                      <SelectItem key={v.id} value={v.id} className="text-xs">
+                                        {v.icon} {v.name} ({v.country})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+
 
                               <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg text-xs">
                                 <button

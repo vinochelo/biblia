@@ -58,7 +58,8 @@ async function synthesizeFullWithEdgeTTS(text: string, voice = TTS_VOICE): Promi
  * Body: { text?: string, chapterId?: string, forceAi?: boolean, generateIfMissing?: boolean }
  */
 async function handleCheckCache(body: any) {
-  const { text, chapterId, forceAi = false, generateIfMissing = false } = body;
+  const { text, chapterId, forceAi = false, generateIfMissing = false, voice } = body;
+  const targetVoice = voice || TTS_VOICE;
 
   // 1. If human pre-recorded audio is available and not forced to AI, return it immediately
   if (chapterId && !forceAi) {
@@ -80,10 +81,10 @@ async function handleCheckCache(body: any) {
   const normalizedText = normalizeTextForTTS(text);
   if (!normalizedText) return NextResponse.json({ error: "Texto vacío" }, { status: 400 });
 
-  const cacheKey = getCacheKey(normalizedText, TTS_VOICE);
+  const cacheKey = getCacheKey(normalizedText, targetVoice);
 
   // 2. Check if already cached in Firebase RTDB
-  const cachedUrl = await getCachedAudio(normalizedText, TTS_VOICE);
+  const cachedUrl = await getCachedAudio(normalizedText, targetVoice);
   if (cachedUrl) {
     return NextResponse.json({ status: "cached", audio: cachedUrl, isHuman: false });
   }
@@ -103,17 +104,18 @@ async function handleCheckCache(body: any) {
   await setGeneratingLock(cacheKey);
 
   try {
-    console.log(`TTS API: Generando audio con Microsoft Edge Neural TTS (${TTS_VOICE})...`);
-    const mp3Base64 = await synthesizeFullWithEdgeTTS(normalizedText, TTS_VOICE);
+    console.log(`TTS API: Generando audio con Microsoft Edge Neural TTS (${targetVoice})...`);
+    const mp3Base64 = await synthesizeFullWithEdgeTTS(normalizedText, targetVoice);
 
     if (mp3Base64 && mp3Base64.length > 100) {
-      console.log(`TTS API: Síntesis con EdgeTTS exitosa (${mp3Base64.length} chars base64). Guardando en Cloudinary y Firebase...`);
-      const downloadUrl = await cacheAudio(normalizedText, TTS_VOICE, mp3Base64);
+      console.log(`TTS API: Síntesis con EdgeTTS exitosa (${mp3Base64.length} chars base64, voz: ${targetVoice}). Guardando en Cloudinary y Firebase...`);
+      const downloadUrl = await cacheAudio(normalizedText, targetVoice, mp3Base64);
       return NextResponse.json({ status: "cached", audio: downloadUrl, isHuman: false });
     }
   } catch (edgeError: any) {
     console.warn("TTS API: EdgeTTS falló, intentando con fallbacks...", edgeError?.message || edgeError);
   }
+
 
 
   // 5. Fallback 1: ElevenLabs if configured
