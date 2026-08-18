@@ -290,7 +290,8 @@ function BibleReaderContent() {
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.src = '';
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
     }
     setAudioStatus('idle');
     setAudioError(null);
@@ -307,6 +308,7 @@ function BibleReaderContent() {
     }
     setAudioUrl(null);
   }, [selectedChapter, audioSourceMode, selectedNarrator]);
+
 
 
   // ── Audio Playback Logic ───────────────────────────────────────────────────
@@ -460,9 +462,14 @@ function BibleReaderContent() {
   };
 
   const handleAudioError = () => {
+    // Si no hay src cargado o el reproductor está inactivo (idle), ignorar el evento de reinicio
+    if (!audioRef.current?.src || audioRef.current.src === '' || audioRef.current.src === window.location.href || audioStatus === 'idle') {
+      return;
+    }
     setAudioError('Error al reproducir el audio. Intenta generarlo de nuevo.');
     setAudioStatus('error');
   };
+
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!audioRef.current || !audioUrl) return;
