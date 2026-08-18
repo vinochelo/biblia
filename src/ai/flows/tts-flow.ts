@@ -1,10 +1,9 @@
 'use server';
 
 import { ai } from '@/ai/genkit';
-import { genkit } from 'genkit';
-import { googleAI } from '@genkit-ai/google-genai';
 import { z } from 'zod';
 import { getCachedAudio, cacheAudio, getCacheKey, cloudinary, ensureCloudinaryConfig } from '@/lib/audio-cache';
+import { executeWithGeminiKeyRotation } from '@/lib/gemini-keys';
 
 const TTSInputSchema = z.object({
   text: z.string().describe('The text to convert to speech.'),
@@ -22,22 +21,8 @@ const TTS_VOICE = 'Fenrir';
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
 const TTS_SAMPLE_WIDTH = 2;
-const MAX_RETRIES = 3;
-const RETRY_BASE_DELAY_MS = 1500;
 
 const VERSE_NUMBER_PATTERN = /(?:^|\s)\d{1,3}\s/g;
-
-function getApiKeys(): string[] {
-  const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
-  return envKeys.split(',').map(k => k.trim()).filter(k => k.length > 0);
-}
-
-function getNextApiKey(): string | undefined {
-  const apiKeys = getApiKeys();
-  if (apiKeys.length === 0) return undefined;
-  const randomIndex = Math.floor(Math.random() * apiKeys.length);
-  return apiKeys[randomIndex];
-}
 
 function normalizeTextForTTS(text: string): string {
   return text
@@ -137,15 +122,8 @@ async function generateSingleChunk(
 ): Promise<Buffer> {
   console.log(`TTS (Gemini): Iniciando fragmento ${chunkIndex + 1}/${totalChunks} (${chunk.length} chars)`);
 
-  let pcmBuffer: Buffer | null = null;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const apiKey = getNextApiKey();
-      if (!apiKey) {
-        throw new Error('No hay claves API de Gemini configuradas');
-      }
-
+  return executeWithGeminiKeyRotation(
+    async (apiKey) => {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
@@ -174,30 +152,12 @@ async function generateSingleChunk(
         throw new Error("La API no retornó datos de audio inlineData.");
       }
 
-      pcmBuffer = Buffer.from(part.inlineData.data, 'base64');
-      break;
-    } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const is429 = errorMsg.includes('429') || errorMsg.toLowerCase().includes('quota') || errorMsg.includes('RESOURCE_EXHAUSTED');
-      console.warn(
-        `TTS (Gemini): Falló fragmento ${chunkIndex + 1} (intento ${attempt}/${MAX_RETRIES})${is429 ? ' [RATE LIMIT]' : ''}: ${errorMsg.substring(0, 200)}`
-      );
-
-      if (attempt === MAX_RETRIES) {
-        throw new Error(`TTS falló en fragmento ${chunkIndex + 1} después de ${MAX_RETRIES} intentos: ${errorMsg.substring(0, 300)}`);
-      }
-
-      const delayMs = is429 ? 3000 * attempt : RETRY_BASE_DELAY_MS * attempt;
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-
-  if (!pcmBuffer) {
-    throw new Error(`TTS no retornó audio para el fragmento ${chunkIndex + 1}`);
-  }
-
-  return pcmBuffer;
+      return Buffer.from(part.inlineData.data, 'base64');
+    },
+    { label: `TTS Chunk ${chunkIndex + 1}/${totalChunks}` }
+  );
 }
+
 
 
 const ttsFlow = ai.defineFlow(

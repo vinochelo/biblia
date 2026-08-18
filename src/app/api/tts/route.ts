@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCachedAudio, cacheAudio, getCacheKey, isGeneratingAudio, setGeneratingLock, clearGeneratingLock } from "@/lib/audio-cache";
+import { executeWithGeminiKeyRotation } from "@/lib/gemini-keys";
 
 const MAX_CHUNK_LENGTH = 800;
 const TTS_MODEL = "gemini-2.5-flash-preview-tts";
@@ -7,22 +8,8 @@ const TTS_VOICE = "Fenrir";
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
 const TTS_SAMPLE_WIDTH = 2;
-const MAX_RETRIES = 3;
-const RETRY_BASE_DELAY_MS = 1500;
 
 const VERSE_NUMBER_PATTERN = /(?:^|\s)\d{1,3}\s/g;
-
-function getApiKeys(): string[] {
-  const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
-  return envKeys.split(",").map((k) => k.trim()).filter((k) => k.length > 0);
-}
-
-function getNextApiKey(): string | undefined {
-  const apiKeys = getApiKeys();
-  if (apiKeys.length === 0) return undefined;
-  const randomIndex = Math.floor(Math.random() * apiKeys.length);
-  return apiKeys[randomIndex];
-}
 
 function normalizeTextForTTS(text: string): string {
   return text
@@ -128,7 +115,7 @@ async function handleCheckCache(body: any) {
   if (elevenLabsApiKey) {
     try {
       const voiceId = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL"; // Sarah prebuilt
-      console.log(`TTS API: Intentando generación premium con ElevenLabs (voz: ${voiceId})...`);
+      console.log(`TTS API: Intentando generación con ElevenLabs (voz: ${voiceId})...`);
       
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: "POST",
@@ -155,7 +142,7 @@ async function handleCheckCache(body: any) {
         return NextResponse.json({ status: "cached", audio: downloadUrl });
       } else {
         const errText = await response.text();
-        console.warn(`TTS API: ElevenLabs no disponible (${response.status}): ${errText.substring(0, 100)}. Usando fallback de Gemini...`);
+        console.warn(`TTS API: ElevenLabs no disponible (${response.status}): ${errText.substring(0, 100)}. Usando fallback de Gemini con rotación multi-key...`);
       }
     } catch (e) {
       console.error("TTS API: Error llamando a ElevenLabs, usando fallback de Gemini...", e);
@@ -176,71 +163,52 @@ async function handleGenerateChunk(body: any) {
   const { chunkText, chunkIndex, totalChunks } = body;
   if (!chunkText) return NextResponse.json({ error: "chunkText requerido" }, { status: 400 });
 
-  const apiKeys = getApiKeys();
-  if (apiKeys.length === 0) {
-    return NextResponse.json({ error: "API key de Gemini no configurada" }, { status: 500 });
-  }
-
-  let pcmBuffer: Buffer | null = null;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const nextKey = getNextApiKey();
-      if (!nextKey) throw new Error("No hay API key disponible");
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${nextKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: chunkText }] }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: TTS_VOICE },
+  try {
+    const pcmBase64 = await executeWithGeminiKeyRotation(
+      async (apiKey) => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: chunkText }] }],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: TTS_VOICE },
+                },
               },
             },
-          },
-        }),
-      });
+          }),
+        });
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errText}`);
-      }
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errText}`);
+        }
 
-      const data = await res.json();
-      const part = data.candidates?.[0]?.content?.parts?.[0];
-      if (!part?.inlineData?.data) {
-        throw new Error("API no retornó datos de audio inlineData");
-      }
+        const data = await res.json();
+        const part = data.candidates?.[0]?.content?.parts?.[0];
+        if (!part?.inlineData?.data) {
+          throw new Error("API no retornó datos de audio inlineData");
+        }
 
-      pcmBuffer = Buffer.from(part.inlineData.data, "base64");
-      break;
-    } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const is429 = errorMsg.includes("429") || errorMsg.toLowerCase().includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED");
-      console.warn(`TTS chunk ${chunkIndex + 1}/${totalChunks} (intento ${attempt}): ${errorMsg.substring(0, 150)}`);
+        return part.inlineData.data as string;
+      },
+      { label: `TTS Chunk ${chunkIndex + 1}/${totalChunks}` }
+    );
 
-      if (attempt === MAX_RETRIES) {
-        return NextResponse.json(
-          { error: `TTS falló chunk ${chunkIndex + 1}: ${errorMsg.substring(0, 300)}`, retryable: is429 },
-          { status: is429 ? 429 : 500 }
-        );
-      }
-
-      const delayMs = is429 ? 3000 * attempt : RETRY_BASE_DELAY_MS * attempt;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
+    return NextResponse.json({ pcmBase64 });
+  } catch (error: any) {
+    console.error(`TTS Chunk ${chunkIndex + 1} falló en todas las claves:`, error);
+    return NextResponse.json(
+      { error: `Error generando fragmento ${chunkIndex + 1}: ${error?.message || error}` },
+      { status: 500 }
+    );
   }
-
-  if (!pcmBuffer) {
-    return NextResponse.json({ error: "No se generó audio para el fragmento" }, { status: 500 });
-  }
-
-  return NextResponse.json({ pcmBase64: pcmBuffer.toString("base64") });
 }
+
 
 /**
  * POST /api/tts?action=finalize

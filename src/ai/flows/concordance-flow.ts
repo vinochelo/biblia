@@ -7,8 +7,8 @@
  * - ConcordanceOutput - The return type for the findConcordance function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { z } from 'zod';
+import { executeWithGeminiKeyRotation } from '@/lib/gemini-keys';
 
 const ConcordanceInputSchema = z.object({
   term: z.string().describe('The word or phrase to find concordances for.'),
@@ -17,8 +17,8 @@ const ConcordanceInputSchema = z.object({
 export type ConcordanceInput = z.infer<typeof ConcordanceInputSchema>;
 
 const ConcordanceVerseSchema = z.object({
-    reference: z.string().describe('The Bible verse reference (e.g., Juan 3:16). Should be in Spanish.'),
-    text: z.string().describe('The full text of the verse. Should be in Spanish.'),
+  reference: z.string().describe('The Bible verse reference (e.g., Juan 3:16). Should be in Spanish.'),
+  text: z.string().describe('The full text of the verse. Should be in Spanish.'),
 });
 
 const ConcordanceOutputSchema = z.object({
@@ -27,33 +27,53 @@ const ConcordanceOutputSchema = z.object({
 export type ConcordanceOutput = z.infer<typeof ConcordanceOutputSchema>;
 
 export async function findConcordance(input: ConcordanceInput): Promise<ConcordanceOutput> {
-  return concordanceFlow(input);
+  const promptText = `You are an expert biblical concordance. Your task is to find verses throughout the Bible that are thematically or linguistically related to the given term: "${input.term}".
+Provide up to 5-7 relevant verses.
+Do not include the original verse if it is provided in the context.
+All responses (references and text) must be in Spanish.
+${input.context ? `Original context (do not include in results): ${input.context}` : ''}
+
+Respond using this exact JSON schema:
+{
+  "verses": [
+    {
+      "reference": "Libro Capítulo:Versículo (e.g., Juan 3:16)",
+      "text": "Texto completo del versículo en español"
+    }
+  ]
+}`;
+
+  return executeWithGeminiKeyRotation(
+    async (apiKey) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawJson) {
+        throw new Error('La API de Gemini no retornó texto.');
+      }
+
+      const parsed = JSON.parse(rawJson);
+      return {
+        verses: Array.isArray(parsed.verses) ? parsed.verses : [],
+      };
+    },
+    { label: `Concordance: ${input.term}` }
+  );
 }
 
-const prompt = ai.definePrompt({
-  name: 'concordancePrompt',
-  input: {schema: ConcordanceInputSchema},
-  output: {schema: ConcordanceOutputSchema},
-  prompt: `You are an expert biblical concordance. Your task is to find verses throughout the Bible that are thematically or linguistically related to the given term. Provide up to 5-7 relevant verses.
-
-Do not include the original verse if it is provided in the context. All responses (references and text) must be in Spanish.
-
-Term to find connections for: {{{term}}}
-{{#if context}}
-Original context (do not include this in results): {{{context}}}
-{{/if}}
-
-Find relevant verses and return them in the specified format.`,
-});
-
-const concordanceFlow = ai.defineFlow(
-  {
-    name: 'concordanceFlow',
-    inputSchema: ConcordanceInputSchema,
-    outputSchema: ConcordanceOutputSchema,
-  },
-  async input => {
-    const {output} = await prompt(input);
-    return output || { verses: [] };
-  }
-);

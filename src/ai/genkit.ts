@@ -1,28 +1,22 @@
-import {genkit} from 'genkit';
-import {googleAI} from '@genkit-ai/google-genai';
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/google-genai';
+import { getNextGeminiApiKey } from '@/lib/gemini-keys';
 
-const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
-const keysArray = envKeys.split(',').map(k => k.trim()).filter(k => k.length > 0);
-
-let selectedKey: string | undefined;
-
-if (keysArray.length === 1) {
-  selectedKey = keysArray[0];
-} else if (keysArray.length > 1) {
-  const idx = Math.floor(Math.random() * keysArray.length);
-  selectedKey = keysArray[idx];
-  console.log(`Genkit: API Key ${idx + 1}/${keysArray.length} seleccionada (rotación multi-key).`);
+function getInitialKey(): string | undefined {
+  try {
+    return getNextGeminiApiKey();
+  } catch {
+    return process.env.GEMINI_API_KEY;
+  }
 }
 
-if (selectedKey) {
-  process.env.GEMINI_API_KEY = selectedKey;
-}
-
-if (!selectedKey) {
-  console.warn("Genkit: No se encontró GEMINI_API_KEY ni GEMINI_API_KEYS en las variables de entorno.");
+const initialKey = getInitialKey();
+if (initialKey) {
+  process.env.GEMINI_API_KEY = initialKey;
 }
 
 export const ai = genkit({
-  plugins: [googleAI()],
+  plugins: [googleAI({ apiKey: initialKey })],
   model: 'googleai/gemini-2.5-flash',
 });
+

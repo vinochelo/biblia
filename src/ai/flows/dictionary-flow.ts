@@ -7,8 +7,8 @@
  * - DefineTermOutput - The return type for the defineTerm function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { z } from 'zod';
+import { executeWithGeminiKeyRotation } from '@/lib/gemini-keys';
 
 const DefineTermInputSchema = z.object({
   term: z.string().describe('The word or phrase to be defined in a biblical context.'),
@@ -24,38 +24,52 @@ const DefineTermOutputSchema = z.object({
 export type DefineTermOutput = z.infer<typeof DefineTermOutputSchema>;
 
 export async function defineTerm(input: DefineTermInput): Promise<DefineTermOutput> {
-  return defineTermFlow(input);
+  const promptText = `You are an expert theologian and biblical dictionary. Your task is to provide a clear and concise definition for the term "${input.term}" in Spanish.
+You must explain the term's meaning within its biblical context. If known, include its etymology (Hebrew or Greek root) and its theological significance. Keep the definition accessible to a layperson.
+${input.context ? `Context from the verse: ${input.context}` : ''}
+
+Respond in Spanish using this exact JSON schema:
+{
+  "term": "${input.term}",
+  "definition": "string",
+  "reference": "string (optional Bible verse reference)"
+}`;
+
+  return executeWithGeminiKeyRotation(
+    async (apiKey) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawJson) {
+        throw new Error('La API de Gemini no retornó texto.');
+      }
+
+      const parsed = JSON.parse(rawJson);
+      return {
+        term: parsed.term || input.term,
+        definition: parsed.definition || '',
+        reference: parsed.reference || undefined,
+      };
+    },
+    { label: `Dictionary: ${input.term}` }
+  );
 }
 
-const prompt = ai.definePrompt({
-  name: 'defineTermPrompt',
-  input: {schema: DefineTermInputSchema},
-  output: {schema: DefineTermOutputSchema},
-  prompt: `You are an expert theologian and biblical dictionary. Your task is to provide a clear and concise definition for the given term, in Spanish.
-
-You must explain the term's meaning within its biblical context. If known, include its etymology (Hebrew or Greek root) and its theological significance.
-Keep the definition accessible to a layperson.
-
-If a context verse is provided, use it to tailor the definition.
-
-Term to define: {{{term}}}
-{{#if context}}
-Context from the verse: {{{context}}}
-{{/if}}
-
-Provide your answer in Spanish.`,
-});
-
-const defineTermFlow = ai.defineFlow(
-  {
-    name: 'defineTermFlow',
-    inputSchema: DefineTermInputSchema,
-    outputSchema: DefineTermOutputSchema,
-  },
-  async input => {
-    const {output} = await prompt(input);
-    return output!;
-  }
-);
 
     
