@@ -17,10 +17,11 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
+  const [isCheckingCache, setIsCheckingCache] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<boolean>(false);
 
-  // Silent pre-fetch when text/fetcher are available so audioSrc is ready before the user clicks
+  // Passive cache check on mount or when text changes (does NOT generate if missing)
   useEffect(() => {
     setIsPlaying(false);
     setAudioSrc(null);
@@ -31,19 +32,31 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       audioRef.current.pause();
     }
 
-    if (text && fetcher) {
+    if (text) {
       let isMounted = true;
-      fetcher(text).then((res) => {
-        if (isMounted && res?.audio) {
-          setAudioSrc(res.audio);
-        }
-      }).catch(() => {});
+      setIsCheckingCache(true);
+
+      fetch("/api/tts?action=check-cache", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, generateIfMissing: false }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.status === "cached" && data.audio) {
+            setAudioSrc(data.audio);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (isMounted) setIsCheckingCache(false);
+        });
 
       return () => {
         isMounted = false;
       };
     }
-  }, [text, fetcher]);
+  }, [text]);
 
   const handlePlay = useCallback(() => {
     if (onPlay) {
@@ -61,12 +74,12 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   }, []);
 
   const handlePlayPause = useCallback(async () => {
-    if (isParentLoading || isFetching) return;
+    if (isParentLoading || isFetching || isCheckingCache) return;
 
     const el = audioRef.current;
     if (!el) return;
 
-    // Case A: Audio URL already available
+    // Case A: Audio URL already available in cache
     if (audioSrc) {
       if (isPlaying) {
         el.pause();
@@ -79,14 +92,14 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
           await el.play();
           setIsPlaying(true);
         } catch (e) {
-          console.error("Error reproduciendo audio en dispositivo móvil:", e);
+          console.error("Error reproduciendo audio:", e);
           setIsPlaying(false);
         }
       }
       return;
     }
 
-    // Case B: Audio URL needs on-demand generation
+    // Case B: Audio URL needs on-demand generation (user clicked Play)
     if (text && fetcher) {
       abortRef.current = false;
       setIsFetching(true);
@@ -104,7 +117,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
             await el.play();
             setIsPlaying(true);
           } catch (e) {
-            console.warn("Autoplay bloqueado por el navegador móvil. Toca jugar de nuevo.", e);
+            console.warn("Autoplay bloqueado por el navegador. Toca jugar de nuevo.", e);
             setIsPlaying(false);
           }
         }
@@ -118,7 +131,7 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
         }
       }
     }
-  }, [isParentLoading, isFetching, audioSrc, isPlaying, text, fetcher]);
+  }, [isParentLoading, isFetching, isCheckingCache, audioSrc, isPlaying, text, fetcher]);
 
   const handleRewind = () => {
     if (audioRef.current) {
@@ -133,13 +146,13 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
   };
 
   const getIcon = () => {
-    if (isParentLoading || isFetching) {
+    if (isParentLoading || isFetching || isCheckingCache) {
       return <Loader2 className="h-5 w-5 animate-spin" />;
     }
     return isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />;
   };
 
-  const areControlsDisabled = isParentLoading || isFetching || !audioSrc;
+  const areControlsDisabled = isParentLoading || isFetching || isCheckingCache || !audioSrc;
 
   return (
     <div className="flex items-center gap-2">
@@ -161,9 +174,10 @@ export function AudioPlayer({ text, fetcher, onPlay, autoPlay = false, isLoading
       <Button variant="outline" size="icon" onClick={handleRewind} disabled={areControlsDisabled} aria-label="Retroceder 10 segundos">
         <Rewind className="h-5 w-5" />
       </Button>
-      <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || isFetching || !text} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
+      <Button variant="outline" size="icon" onClick={handlePlayPause} disabled={isParentLoading || isFetching || isCheckingCache || !text} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
         {getIcon()}
       </Button>
     </div>
   );
 }
+

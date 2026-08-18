@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { genkit } from "genkit";
-import { googleAI } from "@genkit-ai/google-genai";
-import { getCachedAudio, cacheAudio, getCacheKey } from "@/lib/audio-cache";
+import { getCachedAudio, cacheAudio, getCacheKey, isGeneratingAudio, setGeneratingLock, clearGeneratingLock } from "@/lib/audio-cache";
 
-const MAX_CHUNK_LENGTH = 1500;
-const TTS_MODEL = "googleai/gemini-3.1-flash-tts-preview";
+const MAX_CHUNK_LENGTH = 800;
+const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const TTS_VOICE = "Fenrir";
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
 const TTS_SAMPLE_WIDTH = 2;
 const MAX_RETRIES = 3;
-const RETRY_BASE_DELAY_MS = 2000;
+const RETRY_BASE_DELAY_MS = 1500;
 
 const VERSE_NUMBER_PATTERN = /(?:^|\s)\d{1,3}\s/g;
 
@@ -59,30 +57,6 @@ function splitTextIntoChunks(text: string): string[] {
   return chunks.filter((c) => c.length > 0);
 }
 
-function extractPcmFromDataUri(dataUri: string): Buffer {
-  const base64Payload = dataUri.substring(dataUri.indexOf(",") + 1);
-  const decodedBuffer = Buffer.from(base64Payload, "base64");
-  if (decodedBuffer.length < 12) {
-    throw new Error(`Buffer de audio demasiado pequeño (${decodedBuffer.length} bytes)`);
-  }
-  const isRiff =
-    decodedBuffer[0] === 0x52 && decodedBuffer[1] === 0x49 &&
-    decodedBuffer[2] === 0x46 && decodedBuffer[3] === 0x46;
-  if (isRiff) {
-    for (let j = 12; j < Math.min(200, decodedBuffer.length - 8); j += 4) {
-      if (
-        decodedBuffer[j] === 0x64 && decodedBuffer[j + 1] === 0x61 &&
-        decodedBuffer[j + 2] === 0x74 && decodedBuffer[j + 3] === 0x61
-      ) {
-        const chunkSize = decodedBuffer.readUInt32LE(j + 4);
-        return decodedBuffer.subarray(j + 8, j + 8 + chunkSize);
-      }
-    }
-    return decodedBuffer.subarray(44);
-  }
-  return decodedBuffer;
-}
-
 function pcmToWav(pcmBuffer: Buffer, sampleRate: number = 24000, numChannels: number = 1, bitDepth: number = 16): Buffer {
   const header = Buffer.alloc(44);
   
@@ -112,29 +86,49 @@ async function toWav(pcmData: Buffer): Promise<string> {
 }
 
 /**
- * POST /api/tts/check-cache
- * Body: { text: string }
- * Returns: { status: 'cached', audio: string } | { status: 'needs_generation', chunks: string[] }
+ * POST /api/tts?action=check-cache
+ * Body: { text: string, generateIfMissing?: boolean }
+ * Returns: 
+ *   - { status: 'cached', audio: string }
+ *   - { status: 'in_progress' } (when another user or task is generating it)
+ *   - { status: 'not_cached' } (when generateIfMissing is false and not in cache)
+ *   - { status: 'needs_generation', chunks: string[] } (when generateIfMissing is true and needs chunks)
  */
 async function handleCheckCache(body: any) {
-  const text = body.text;
+  const { text, generateIfMissing = false } = body;
   if (!text) return NextResponse.json({ error: "Texto requerido" }, { status: 400 });
 
   const normalizedText = normalizeTextForTTS(text);
   if (!normalizedText) return NextResponse.json({ error: "Texto vacío" }, { status: 400 });
 
-  // 1. Check if already cached
+  const cacheKey = getCacheKey(normalizedText, TTS_VOICE);
+
+  // 1. Check if already cached in Firebase RTDB
   const cachedUrl = await getCachedAudio(normalizedText, TTS_VOICE);
   if (cachedUrl) {
     return NextResponse.json({ status: "cached", audio: cachedUrl });
   }
 
-  // 2. Try ElevenLabs premium generation for the whole text in one call
+  // 2. Check if another user/process is currently generating this audio
+  const inProgress = await isGeneratingAudio(cacheKey);
+  if (inProgress) {
+    return NextResponse.json({ status: "in_progress" });
+  }
+
+  // If user only wanted a passive cache check (e.g. on page mount), do not start generating
+  if (!generateIfMissing) {
+    return NextResponse.json({ status: "not_cached" });
+  }
+
+  // 3. User explicitly requested generation: set lock
+  await setGeneratingLock(cacheKey);
+
+  // 4. Try ElevenLabs premium generation for the whole text in one call
   const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
   if (elevenLabsApiKey) {
     try {
       const voiceId = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL"; // Sarah prebuilt
-      console.log(`TTS API: Intentando generación premium completa con ElevenLabs (voz: ${voiceId})...`);
+      console.log(`TTS API: Intentando generación premium con ElevenLabs (voz: ${voiceId})...`);
       
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: "POST",
@@ -161,20 +155,20 @@ async function handleCheckCache(body: any) {
         return NextResponse.json({ status: "cached", audio: downloadUrl });
       } else {
         const errText = await response.text();
-        console.warn(`TTS API: ElevenLabs no disponible (status: ${response.status}). Usando fallback de Gemini...`);
+        console.warn(`TTS API: ElevenLabs no disponible (${response.status}): ${errText.substring(0, 100)}. Usando fallback de Gemini...`);
       }
     } catch (e) {
       console.error("TTS API: Error llamando a ElevenLabs, usando fallback de Gemini...", e);
     }
   }
 
-  // 3. Fallback: Split text and return chunks for Gemini generation
+  // 5. Fallback: Split text and return chunks for Gemini generation
   const chunks = splitTextIntoChunks(normalizedText);
   return NextResponse.json({ status: "needs_generation", chunks });
 }
 
 /**
- * POST /api/tts/generate-chunk
+ * POST /api/tts?action=generate-chunk
  * Body: { chunkText: string, chunkIndex: number, totalChunks: number }
  * Returns: { pcmBase64: string }
  */
@@ -184,37 +178,50 @@ async function handleGenerateChunk(body: any) {
 
   const apiKeys = getApiKeys();
   if (apiKeys.length === 0) {
-    return NextResponse.json({ error: "API key no configurada" }, { status: 500 });
+    return NextResponse.json({ error: "API key de Gemini no configurada" }, { status: 500 });
   }
 
-  let media: any = null;
+  let pcmBuffer: Buffer | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const nextKey = getNextApiKey();
-      const chunkAi = genkit({ plugins: [googleAI({ apiKey: nextKey })] });
-      const result = await chunkAi.generate({
-        model: TTS_MODEL,
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: TTS_VOICE },
+      if (!nextKey) throw new Error("No hay API key disponible");
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${nextKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: chunkText }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: TTS_VOICE },
+              },
             },
           },
-        },
-        prompt: chunkText,
+        }),
       });
 
-      if (!result.media?.url) {
-        throw new Error("API no retornó audio");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
       }
-      media = result.media;
+
+      const data = await res.json();
+      const part = data.candidates?.[0]?.content?.parts?.[0];
+      if (!part?.inlineData?.data) {
+        throw new Error("API no retornó datos de audio inlineData");
+      }
+
+      pcmBuffer = Buffer.from(part.inlineData.data, "base64");
       break;
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      const is429 = errorMsg.includes("429") || errorMsg.toLowerCase().includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("Resource has been exhausted");
-      console.warn(`TTS chunk ${chunkIndex + 1}/${totalChunks} (intento ${attempt}): ${errorMsg.substring(0, 200)}`);
+      const is429 = errorMsg.includes("429") || errorMsg.toLowerCase().includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED");
+      console.warn(`TTS chunk ${chunkIndex + 1}/${totalChunks} (intento ${attempt}): ${errorMsg.substring(0, 150)}`);
 
       if (attempt === MAX_RETRIES) {
         return NextResponse.json(
@@ -223,21 +230,20 @@ async function handleGenerateChunk(body: any) {
         );
       }
 
-      const delayMs = is429 ? 5000 * attempt : RETRY_BASE_DELAY_MS * attempt;
+      const delayMs = is429 ? 3000 * attempt : RETRY_BASE_DELAY_MS * attempt;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 
-  if (!media?.url) {
-    return NextResponse.json({ error: "No se generó audio" }, { status: 500 });
+  if (!pcmBuffer) {
+    return NextResponse.json({ error: "No se generó audio para el fragmento" }, { status: 500 });
   }
 
-  const pcmBuffer = extractPcmFromDataUri(media.url);
   return NextResponse.json({ pcmBase64: pcmBuffer.toString("base64") });
 }
 
 /**
- * POST /api/tts/finalize
+ * POST /api/tts?action=finalize
  * Body: { text: string, pcmParts: string[] }
  * Returns: { audio: string }
  */
@@ -277,3 +283,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: e.message || "Error interno" }, { status: 500 });
   }
 }
+

@@ -70,6 +70,46 @@ export async function getCachedAudio(text: string, voice: string): Promise<strin
   }
 }
 
+export async function isGeneratingAudio(key: string): Promise<boolean> {
+  if (!adminDb) return false;
+
+  try {
+    const snapshot = await adminDb.ref(`tts_in_progress/${key}`).get();
+    if (!snapshot.exists()) return false;
+    const startedAt = snapshot.val();
+    const now = Date.now();
+    // Lock expires after 3 minutes (180,000 ms) in case a process crashed
+    if (typeof startedAt === 'number' && now - startedAt < 180000) {
+      return true;
+    }
+    // Expired lock: remove it
+    await adminDb.ref(`tts_in_progress/${key}`).remove();
+    return false;
+  } catch (error) {
+    console.warn("TTS Cache: Error verificando estado de generación:", error);
+    return false;
+  }
+}
+
+export async function setGeneratingLock(key: string): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.ref(`tts_in_progress/${key}`).set(Date.now());
+  } catch (error) {
+    console.warn("TTS Cache: Error estableciendo bloqueo de generación:", error);
+  }
+}
+
+export async function clearGeneratingLock(key: string): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.ref(`tts_in_progress/${key}`).remove();
+  } catch (error) {
+    console.warn("TTS Cache: Error limpiando bloqueo de generación:", error);
+  }
+}
+
+
 export async function cacheAudio(text: string, voice: string, wavBase64: string): Promise<string> {
   const wavBuffer = Buffer.from(wavBase64, 'base64');
   
@@ -131,10 +171,12 @@ export async function cacheAudio(text: string, voice: string, wavBase64: string)
       if (adminDb) {
         try {
           await adminDb.ref(`tts_cache/${key}`).set(publicUrl);
+          await clearGeneratingLock(key);
         } catch (dbError) {
           console.error("TTS Cache: Error guardando URL en Firebase RTDB (audio ya subido a Cloudinary):", dbError);
         }
       }
+
 
       const mp3SizeKB = uploadResponse.bytes ? (uploadResponse.bytes / 1024).toFixed(1) : '?';
       console.log(`TTS Cache: Audio subido exitosamente → ${publicUrl} (MP3: ${mp3SizeKB} KB, compresión: ${sizeMB} MB → ~${Math.round(parseInt(mp3SizeKB || '0') / 1024)} MB)`);

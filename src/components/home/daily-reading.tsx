@@ -87,12 +87,12 @@ async function generateAudioViaApi(
   text: string,
   onProgress: (msg: string) => void
 ): Promise<TTSOutput | null> {
-  // Step 1: Check cache
-  onProgress("Verificando caché...");
+  // Step 1: Check cache / trigger generation
+  onProgress("Verificando...");
   const checkRes = await fetch("/api/tts?action=check-cache", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, generateIfMissing: true }),
   });
 
   if (!checkRes.ok) {
@@ -104,6 +104,25 @@ async function generateAudioViaApi(
 
   if (checkData.status === "cached" && checkData.audio) {
     return { audio: checkData.audio };
+  }
+
+  // If another process is already generating, wait and poll for the result
+  if (checkData.status === "in_progress") {
+    onProgress("Generando audio en el servidor...");
+    for (let p = 0; p < 15; p++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const pollRes = await fetch("/api/tts?action=check-cache", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, generateIfMissing: false }),
+      });
+      if (pollRes.ok) {
+        const pollData = await pollRes.json();
+        if (pollData.status === "cached" && pollData.audio) {
+          return { audio: pollData.audio };
+        }
+      }
+    }
   }
 
   // Step 2: Generate each chunk individually
@@ -143,7 +162,7 @@ async function generateAudioViaApi(
     }
 
     if (i < chunks.length - 1) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 300));
     }
   }
 
@@ -167,6 +186,7 @@ async function generateAudioViaApi(
     throw new Error(e.message || "Error guardando audio");
   }
 }
+
 
 
 export function DailyReading() {

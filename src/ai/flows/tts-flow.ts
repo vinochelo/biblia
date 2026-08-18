@@ -16,15 +16,14 @@ const TTSOutputSchema = z.object({
 });
 export type TTSOutput = z.infer<typeof TTSOutputSchema>;
 
-const MAX_CHUNK_LENGTH = 1500;
-const TTS_MODEL = 'googleai/gemini-3.1-flash-tts-preview';
+const MAX_CHUNK_LENGTH = 800;
+const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 const TTS_VOICE = 'Fenrir';
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
 const TTS_SAMPLE_WIDTH = 2;
-const MAX_RETRIES = 5;
-const RETRY_BASE_DELAY_MS = 2000;
-const INTER_CHUNK_DELAY_MS = 1000;
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 1500;
 
 const VERSE_NUMBER_PATTERN = /(?:^|\s)\d{1,3}\s/g;
 
@@ -40,14 +39,6 @@ function getNextApiKey(): string | undefined {
   return apiKeys[randomIndex];
 }
 
-function extractRetryDelayMs(errorMsg: string): number | null {
-  const match = errorMsg.match(/retry in ([\d.]+)s/i);
-  if (match) {
-    return Math.ceil(parseFloat(match[1]) * 1000) + 1000;
-  }
-  return null;
-}
-
 function normalizeTextForTTS(text: string): string {
   return text
     .trim()
@@ -57,10 +48,6 @@ function normalizeTextForTTS(text: string): string {
 }
 
 export async function textToSpeech(input: TTSInput): Promise<TTSOutput> {
-  const apiKeys = getApiKeys();
-  if (apiKeys.length === 0) {
-    throw new Error('GEMINI_API_KEY no está configurada en las variables de entorno.');
-  }
   return ttsFlow(input);
 }
 
@@ -101,46 +88,6 @@ function splitTextIntoChunks(text: string): string[] {
   }
 
   return chunks.filter(c => c.length > 0);
-}
-
-function extractPcmFromDataUri(dataUri: string): Buffer {
-  const base64Payload = dataUri.substring(dataUri.indexOf(',') + 1);
-  const decodedBuffer = Buffer.from(base64Payload, 'base64');
-
-  if (decodedBuffer.length < 12) {
-    throw new Error(`Buffer de audio demasiado pequeño (${decodedBuffer.length} bytes)`);
-  }
-
-  const isRiff =
-    decodedBuffer[0] === 0x52 && decodedBuffer[1] === 0x49 &&
-    decodedBuffer[2] === 0x46 && decodedBuffer[3] === 0x46;
-
-  if (isRiff) {
-    const isData =
-      decodedBuffer[36] === 0x64 && decodedBuffer[37] === 0x61 &&
-      decodedBuffer[38] === 0x74 && decodedBuffer[39] === 0x61;
-
-    if (isData) {
-      const dataSize = decodedBuffer.readUInt32LE(40);
-      return decodedBuffer.subarray(44, 44 + dataSize);
-    }
-
-    for (let j = 12; j < Math.min(200, decodedBuffer.length - 8); j += 4) {
-      if (
-        decodedBuffer[j] === 0x64 && decodedBuffer[j + 1] === 0x61 &&
-        decodedBuffer[j + 2] === 0x74 && decodedBuffer[j + 3] === 0x61
-      ) {
-        const chunkSize = decodedBuffer.readUInt32LE(j + 4);
-        return decodedBuffer.subarray(j + 8, j + 8 + chunkSize);
-      }
-    }
-
-    console.warn('TTS: Header RIFF encontrado pero sin chunk "data", usando fallback offset=44');
-    return decodedBuffer.subarray(44);
-  }
-
-  console.log('TTS: Audio PCM puro detectado (sin header RIFF), usando buffer completo');
-  return decodedBuffer;
 }
 
 function pcmToWav(
@@ -190,39 +137,48 @@ async function generateSingleChunk(
 ): Promise<Buffer> {
   console.log(`TTS (Gemini): Iniciando fragmento ${chunkIndex + 1}/${totalChunks} (${chunk.length} chars)`);
 
-  let media: any = null;
+  let pcmBuffer: Buffer | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const nextKey = getNextApiKey();
-      const keys = getApiKeys();
-      const keyIndex = nextKey ? keys.indexOf(nextKey) : -1;
-      console.log(`TTS (Gemini): Fragmento ${chunkIndex + 1}/${totalChunks} (intento ${attempt}) usando API Key #${keyIndex >= 0 ? keyIndex + 1 : 'default'}/${keys.length}`);
+      const apiKey = getNextApiKey();
+      if (!apiKey) {
+        throw new Error('No hay claves API de Gemini configuradas');
+      }
 
-      const chunkAi = genkit({
-        plugins: [googleAI({ apiKey: nextKey })],
-      });
-
-      const result = await chunkAi.generate({
-        model: TTS_MODEL,
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: TTS_VOICE },
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: chunk }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: TTS_VOICE },
+              },
             },
           },
-        },
-        prompt: chunk,
+        }),
       });
-      if (!result.media?.url) {
-        throw new Error("La API no retornó la URL del contenido de audio (posible respuesta vacía o bloqueo de seguridad transitorio).");
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
       }
-      media = result.media;
+
+      const data = await res.json();
+      const part = data.candidates?.[0]?.content?.parts?.[0];
+      if (!part?.inlineData?.data) {
+        throw new Error("La API no retornó datos de audio inlineData.");
+      }
+
+      pcmBuffer = Buffer.from(part.inlineData.data, 'base64');
       break;
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      const is429 = errorMsg.includes('429') || errorMsg.toLowerCase().includes('quota');
+      const is429 = errorMsg.includes('429') || errorMsg.toLowerCase().includes('quota') || errorMsg.includes('RESOURCE_EXHAUSTED');
       console.warn(
         `TTS (Gemini): Falló fragmento ${chunkIndex + 1} (intento ${attempt}/${MAX_RETRIES})${is429 ? ' [RATE LIMIT]' : ''}: ${errorMsg.substring(0, 200)}`
       );
@@ -231,30 +187,18 @@ async function generateSingleChunk(
         throw new Error(`TTS falló en fragmento ${chunkIndex + 1} después de ${MAX_RETRIES} intentos: ${errorMsg.substring(0, 300)}`);
       }
 
-      let delayMs: number;
-      if (is429) {
-        const serverRetryDelay = extractRetryDelayMs(errorMsg);
-        if (serverRetryDelay) {
-          delayMs = serverRetryDelay;
-          console.log(`TTS (Gemini): Respetando retry del servidor: esperando ${Math.round(delayMs / 1000)}s`);
-        } else {
-          delayMs = 60000 * attempt;
-          console.log(`TTS (Gemini): Rate limit sin retry delay, esperando ${Math.round(delayMs / 1000)}s (intento ${attempt})`);
-        }
-      } else {
-        delayMs = RETRY_BASE_DELAY_MS * attempt;
-      }
-
+      const delayMs = is429 ? 3000 * attempt : RETRY_BASE_DELAY_MS * attempt;
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
 
-  if (!media?.url) {
+  if (!pcmBuffer) {
     throw new Error(`TTS no retornó audio para el fragmento ${chunkIndex + 1}`);
   }
 
-  return extractPcmFromDataUri(media.url);
+  return pcmBuffer;
 }
+
 
 const ttsFlow = ai.defineFlow(
   {

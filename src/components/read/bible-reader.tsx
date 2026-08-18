@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
-import { trackApiCall, trackAiApiCall } from "@/lib/utils";
+import { trackApiCall, trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
 
 import {
   Select,
@@ -29,20 +29,13 @@ import {
   DialogDescription
 } from "@/components/ui/dialog";
 
-
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const LAST_BOOK_STORAGE_KEY = "last-book-id";
 const LAST_CHAPTER_STORAGE_KEY = "last-chapter-id";
 
 type AudioStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
 
-/** Extrae texto plano del HTML del capítulo usando el DOM */
-function extractPlainText(html: string): string {
-  if (typeof window === 'undefined') return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return (div.textContent || div.innerText || '').replace(/\s+/g, ' ').trim();
-}
+
 
 /**
  * Ensambla un Blob URL de WAV directamente en el navegador a partir de fragmentos PCM en base64.
@@ -308,7 +301,7 @@ function BibleReaderContent() {
 
     if (!chapterContent) return;
 
-    const plainText = extractPlainText(chapterContent.content);
+    const plainText = extractPlainTextFromBibleHtml(chapterContent.content);
     if (!plainText) {
       setAudioError('No se encontró texto para leer.');
       setAudioStatus('error');
@@ -320,11 +313,11 @@ function BibleReaderContent() {
     setChunkProgress(null);
 
     try {
-      // Step 1: Check cache
+      // Step 1: Check cache / trigger generation
       const cacheRes = await fetch('/api/tts?action=check-cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: plainText }),
+        body: JSON.stringify({ text: plainText, generateIfMissing: true }),
       });
 
       if (!cacheRes.ok) {
@@ -346,6 +339,33 @@ function BibleReaderContent() {
         setAudioStatus('playing');
         return;
       }
+
+      // If another process is already generating, poll until ready
+      if (cacheData.status === 'in_progress') {
+        for (let p = 0; p < 15; p++) {
+          await new Promise(r => setTimeout(r, 3000));
+          const pollRes = await fetch('/api/tts?action=check-cache', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: plainText, generateIfMissing: false }),
+          });
+          if (pollRes.ok) {
+            const pollData = await pollRes.json();
+            if (pollData.status === 'cached' && pollData.audio) {
+              const url = pollData.audio;
+              if (selectedChapter) audioCache.current[selectedChapter] = url;
+              setAudioUrl(url);
+              if (audioRef.current) {
+                audioRef.current.src = url;
+                audioRef.current.play();
+              }
+              setAudioStatus('playing');
+              return;
+            }
+          }
+        }
+      }
+
 
       // Step 2: Generate chunks
       const chunks: string[] = cacheData.chunks || [];
