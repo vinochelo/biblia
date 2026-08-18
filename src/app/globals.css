@@ -119,11 +119,15 @@
   }
   .reader-text-md, .reader-text-md p, .reader-text-md span, .reader-text-md div {
     font-size: 1.15rem !important;
-    line-height: 1.8 !important;
+    line-height: 1.85 !important;
   }
   .reader-text-lg, .reader-text-lg p, .reader-text-lg span, .reader-text-lg div {
-    font-size: 1.4rem !important;
-    line-height: 1.9 !important;
+    font-size: 1.35rem !important;
+    line-height: 1.95 !important;
+  }
+  .reader-text-xl, .reader-text-xl p, .reader-text-xl span, .reader-text-xl div {
+    font-size: 1.6rem !important;
+    line-height: 2.1 !important;
   }
 
   @media (min-width: 768px) {
@@ -132,12 +136,17 @@
       line-height: 1.75 !important;
     }
     .reader-text-md, .reader-text-md p, .reader-text-md span, .reader-text-md div {
-      font-size: 1.2rem !important;
-      line-height: 1.85 !important;
+      font-size: 1.25rem !important;
+      line-height: 1.9 !important;
     }
     .reader-text-lg, .reader-text-lg p, .reader-text-lg span, .reader-text-lg div {
       font-size: 1.5rem !important;
-      line-height: 2 !important;
+      line-height: 2.05 !important;
+    }
+    .reader-text-xl, .reader-text-xl p, .reader-text-xl span, .reader-text-xl div {
+      font-size: 1.8rem !important;
+      line-height: 2.25 !important;
     }
   }
 }
+

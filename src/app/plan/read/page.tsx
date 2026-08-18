@@ -16,9 +16,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FontSizeControl, type FontSize } from "@/components/common/font-size-control";
+
+
+
+
 
 const bookToId: { [key: string]: string } = {
   "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
@@ -122,7 +128,12 @@ function DailyReadingPageContent() {
         if (typeof window === "undefined") return DEFAULT_AI_VOICE;
         return localStorage.getItem("preferred_ai_voice") || DEFAULT_AI_VOICE;
     });
+    const [fontSize, setFontSize] = useState<FontSize>(() => {
+        if (typeof window === "undefined") return "md";
+        return (localStorage.getItem("preferred_bible_font_size") as FontSize) || "md";
+    });
     const [dailyChapters, setDailyChapters] = useState<{ id: string; reference: string; audioUrl: string | null }[]>([]);
+
     const [activeChapterIndex, setActiveChapterIndex] = useState(0);
     const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai'>('human');
     const [isHumanPlaying, setIsHumanPlaying] = useState(false);
@@ -442,39 +453,52 @@ const selection = window.getSelection();
                 />
 
                 {!isTextLoading && htmlContent && (
-                    <Card>
-                         <CardHeader className="space-y-3">
-                            {/* Audio Mode Switcher */}
+                    <Card className="rounded-3xl border border-border/70 shadow-xs overflow-hidden">
+                         <CardHeader className="space-y-3 bg-muted/30 border-b border-border/50 p-4 sm:p-6">
+                            {/* Audio Mode Switcher & Font Size */}
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex items-center gap-1 bg-muted/70 p-1 rounded-lg text-xs font-medium">
+                                <div className="flex items-center gap-1 bg-muted/70 p-1 rounded-xl text-xs font-medium border border-border/40">
                                   <button
                                     type="button"
                                     onClick={() => setAudioSourceMode('human')}
-                                    className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                                    className={`px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5 ${
                                       audioSourceMode === 'human'
-                                        ? 'bg-background text-foreground shadow-sm font-semibold'
+                                        ? 'bg-background text-foreground shadow-xs font-bold text-primary'
                                         : 'text-muted-foreground hover:text-foreground'
                                     }`}
                                     title="Voz oficial pregrabada por Samuel Montoya (RVR 1909)"
                                   >
-                                    <Mic className="h-3.5 w-3.5 text-primary" />
+                                    <Mic className="h-3.5 w-3.5" />
                                     Locución Humana
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setAudioSourceMode('ai')}
-                                    className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                                    className={`px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1.5 ${
                                       audioSourceMode === 'ai'
-                                        ? 'bg-background text-foreground shadow-sm font-semibold'
+                                        ? 'bg-background text-foreground shadow-xs font-bold text-primary'
                                         : 'text-muted-foreground hover:text-foreground'
                                     }`}
-                                    title="Voz sintética neuronal de Microsoft Edge"
+                                    title="Voz sintética neuronal"
                                   >
-                                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                    <Sparkles className="h-3.5 w-3.5" />
                                     IA Neuronal
                                   </button>
                                 </div>
+
+                                <div className="ml-auto">
+                                  <FontSizeControl
+                                    fontSize={fontSize}
+                                    onChange={(s) => {
+                                      setFontSize(s);
+                                      if (typeof window !== "undefined") {
+                                        localStorage.setItem("preferred_bible_font_size", s);
+                                      }
+                                    }}
+                                  />
+                                </div>
                             </div>
+
 
                             {/* Mode 1: Human Voice Controls */}
                             {audioSourceMode === 'human' && (
@@ -578,14 +602,15 @@ const selection = window.getSelection();
 
                         </CardHeader>
 
-                        <CardContent>
+                        <CardContent className="p-6 md:p-10">
                              <div 
-                                className="prose prose-lg max-w-none font-body leading-relaxed text-justify"
+                                className={`prose max-w-none font-body leading-relaxed text-justify reader-text-${fontSize}`}
                                 dangerouslySetInnerHTML={{ __html: htmlContent || ''}}
                                 ref={contentRef}
                                 onMouseUp={handleSelection}
                             />
                         </CardContent>
+
                     </Card>
                 )}
             </div>

@@ -25,16 +25,15 @@ import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 
+import { FontSizeControl, type FontSize } from "@/components/common/font-size-control";
+
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
 const BROWSER_VOICE_RATE_KEY = 'browser-tts-rate';
-const FONT_SIZE_KEY = 'reader-font-size';
+const FONT_SIZE_KEY = 'preferred_bible_font_size';
 const HUMAN_NARRATOR_KEY = 'preferred_human_narrator';
 const AI_VOICE_KEY = 'preferred_ai_voice';
 
-type FontSize = 'sm' | 'md' | 'lg';
-const FONT_SIZE_LABELS: Record<FontSize, string> = { sm: 'Pequeña', md: 'Mediana', lg: 'Grande' };
-const FONT_SIZES: FontSize[] = ['sm', 'md', 'lg'];
 
 
 // --- Helper: Parse passage string to chapter IDs (client-side) ---
@@ -323,11 +322,6 @@ export function DailyReading() {
     localStorage.setItem(FONT_SIZE_KEY, fontSize);
   }, [fontSize]);
 
-  const cycleFontSize = (direction: 'up' | 'down') => {
-    const idx = FONT_SIZES.indexOf(fontSize);
-    if (direction === 'up' && idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx + 1]);
-    if (direction === 'down' && idx > 0) setFontSize(FONT_SIZES[idx - 1]);
-  };
 
   const handleBrowserSpeech = () => {
     if (!isBrowserTtsSupported || !textContent) return;
@@ -896,31 +890,18 @@ export function DailyReading() {
                         </div>
 
                         {/* Font Size Controls */}
-                        <div className="flex items-center gap-1.5 ml-auto">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cycleFontSize('down')}
-                                disabled={fontSize === 'sm'}
-                                aria-label="Reducir tamaño de letra"
-                            >
-                                <Minus className="h-3.5 w-3.5" />
-                            </Button>
-                            <span className="text-xs font-sans font-medium text-muted-foreground w-8 text-center select-none">
-                                <Type className="h-3.5 w-3.5 inline" />
-                            </span>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => cycleFontSize('up')}
-                                disabled={fontSize === 'lg'}
-                                aria-label="Aumentar tamaño de letra"
-                            >
-                                <Plus className="h-3.5 w-3.5" />
-                            </Button>
+                        <div className="ml-auto">
+                          <FontSizeControl
+                            fontSize={fontSize}
+                            onChange={(size) => {
+                              setFontSize(size);
+                              if (typeof window !== "undefined") {
+                                localStorage.setItem(FONT_SIZE_KEY, size);
+                              }
+                            }}
+                          />
                         </div>
+
                     </div>
 
                     {/* Mode 1: Human Voice Controls */}
