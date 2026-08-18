@@ -15,6 +15,44 @@ function normalizeTextForTTS(text: string): string {
     .trim();
 }
 
+function splitTextForEdgeTTS(text: string, maxLen = 2500): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining);
+      break;
+    }
+    let splitIdx = -1;
+    const searchArea = remaining.substring(0, maxLen);
+    for (let i = searchArea.length - 1; i >= 0; i--) {
+      if ('.!?\n'.includes(searchArea[i])) {
+        splitIdx = i + 1;
+        break;
+      }
+    }
+    if (splitIdx === -1) splitIdx = searchArea.lastIndexOf(' ');
+    if (splitIdx === -1) splitIdx = maxLen;
+    chunks.push(remaining.substring(0, splitIdx).trim());
+    remaining = remaining.substring(splitIdx).trim();
+  }
+  return chunks.filter(c => c.length > 0);
+}
+
+async function synthesizeFullWithEdgeTTS(text: string, voice = TTS_VOICE): Promise<string> {
+  const chunks = splitTextForEdgeTTS(text, 2500);
+  const mp3Buffers: Buffer[] = [];
+
+  for (const chunk of chunks) {
+    const edgeTts = new EdgeTTS();
+    await edgeTts.synthesize(chunk, voice);
+    mp3Buffers.push(edgeTts.toBuffer());
+  }
+
+  return Buffer.concat(mp3Buffers).toString('base64');
+}
+
 /**
  * POST /api/tts?action=check-cache
  * Body: { text?: string, chapterId?: string, forceAi?: boolean, generateIfMissing?: boolean }
@@ -66,9 +104,7 @@ async function handleCheckCache(body: any) {
 
   try {
     console.log(`TTS API: Generando audio con Microsoft Edge Neural TTS (${TTS_VOICE})...`);
-    const edgeTts = new EdgeTTS();
-    await edgeTts.synthesize(normalizedText, TTS_VOICE);
-    const mp3Base64 = edgeTts.toBase64();
+    const mp3Base64 = await synthesizeFullWithEdgeTTS(normalizedText, TTS_VOICE);
 
     if (mp3Base64 && mp3Base64.length > 100) {
       console.log(`TTS API: Síntesis con EdgeTTS exitosa (${mp3Base64.length} chars base64). Guardando en Cloudinary y Firebase...`);
@@ -78,6 +114,7 @@ async function handleCheckCache(body: any) {
   } catch (edgeError: any) {
     console.warn("TTS API: EdgeTTS falló, intentando con fallbacks...", edgeError?.message || edgeError);
   }
+
 
   // 5. Fallback 1: ElevenLabs if configured
   const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;

@@ -5,18 +5,50 @@ import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from 'next/navigation';
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { getPassagesText } from "@/lib/actions";
-import { Loader2, BookOpen, Speaker } from "lucide-react";
+import { Loader2, BookOpen, Speaker, Play, Pause, Mic, Sparkles, Volume2, RotateCcw, Rewind, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { AudioPlayer } from "@/components/common/audio-player";
-import { AlertCircle } from "lucide-react";
 import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
+import { getHumanAudioForChapter } from "@/lib/human-audio-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+
+const bookToId: { [key: string]: string } = {
+  "Génesis": "GEN", "Éxodo": "EXO", "Levítico": "LEV", "Números": "NUM", "Deuteronomio": "DEU",
+  "Josué": "JOS", "Jueces": "JDG", "Rut": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
+  "1 Reyes": "1KI", "2 Reyes": "2KI", "1 Crónicas": "1CH", "2 Crónicas": "2CH", "Esdras": "EZR",
+  "Nehemías": "NEH", "Ester": "EST", "Job": "JOB", "Salmos": "PSA", "Proverbios": "PRO",
+  "Eclesiastés": "ECC", "Cantares": "SNG", "Isaías": "ISA", "Jeremías": "JER",
+  "Lamentaciones": "LAM", "Ezequiel": "EZK", "Daniel": "DAN", "Oseas": "HOS", "Joel": "JOL",
+  "Amós": "AMO", "Abdías": "OBA", "Jonás": "JON", "Miqueas": "MIC", "Nahum": "NAM",
+  "Habacuc": "HAB", "Sofonías": "ZEP", "Hageo": "HAG", "Zacarías": "ZEC", "Malaquías": "MAL",
+  "Mateo": "MAT", "Marcos": "MRK", "Lucas": "LUK", "Juan": "JHN", "Hechos": "ACT",
+  "Romanos": "ROM", "1 Corintios": "1CO", "2 Corintios": "2CO", "Gálatas": "GAL", "Efesios": "EPH",
+  "Filipenses": "PHP", "Colosenses": "COL", "1 Tesalonicenses": "1TH", "2 Tesalonicenses": "2TH",
+  "1 Timoteo": "1TI", "2 Timoteo": "2TI", "Tito": "TIT", "Filemón": "PHM", "Hebreos": "HEB",
+  "Santiago": "JAS", "1 Pedro": "1PE", "2 Pedro": "2PE", "1 Juan": "1JN", "2 Juan": "2JN",
+  "3 Juan": "3JN", "Judas": "JUD", "Apocalipsis": "REV"
+};
+
+function parsePassageToChapterIds(passage: string): string[] {
+  const bookNames = Object.keys(bookToId).sort((a, b) => b.length - a.length);
+  const normalizedPassage = passage.replace(/\s+/g, "");
+  for (const bookName of bookNames) {
+    const normalizedBookName = bookName.replace(/\s+/g, "");
+    if (normalizedPassage.startsWith(normalizedBookName)) {
+      const bookId = bookToId[bookName];
+      const remaining = normalizedPassage.substring(normalizedBookName.length);
+      const chapters = remaining.split(",").map((s) => s.trim()).filter(Boolean);
+      return chapters.map((ch) => `${bookId}.${ch}`);
+    }
+  }
+  return [];
+}
 
 async function generateAudioViaApi(
   text: string,
@@ -62,8 +94,6 @@ async function generateAudioViaApi(
   throw new Error("La generación tardó demasiado. Inténtalo de nuevo.");
 }
 
-
-
 function DailyReadingPageContent() {
     const searchParams = useSearchParams();
     const month = searchParams.get('month');
@@ -78,6 +108,14 @@ function DailyReadingPageContent() {
     const [audioProgress, setAudioProgress] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [audioError, setAudioError] = useState<string | null>(null);
+
+    // Human audio state
+    const [dailyChapters, setDailyChapters] = useState<{ id: string; reference: string; audioUrl: string | null }[]>([]);
+    const [activeChapterIndex, setActiveChapterIndex] = useState(0);
+    const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai'>('human');
+    const [isHumanPlaying, setIsHumanPlaying] = useState(false);
+    const [humanProgress, setHumanProgress] = useState(0);
+    const humanAudioRef = useRef<HTMLAudioElement | null>(null);
 
     // Auto-dismiss audio errors after 8 seconds
     useEffect(() => {
@@ -115,6 +153,20 @@ function DailyReadingPageContent() {
                 setIsTextLoading(true);
                 setError(null);
                 try {
+                    const allChapterIds: string[] = [];
+                    for (const passage of reading.passages) {
+                        const ids = parsePassageToChapterIds(passage);
+                        allChapterIds.push(...ids);
+                    }
+
+                    const chaptersData: { id: string; reference: string; audioUrl: string | null }[] = allChapterIds.map(chId => ({
+                        id: chId,
+                        reference: chId,
+                        audioUrl: getHumanAudioForChapter(chId),
+                    }));
+                    setDailyChapters(chaptersData);
+                    setActiveChapterIndex(0);
+
                     const result = await getPassagesText(reading.passages, BIBLE_VERSION_FOR_TTS);
                     if (result && typeof result === 'object' && 'error' in result) {
                         setError(result.error);
@@ -139,27 +191,111 @@ function DailyReadingPageContent() {
         fetchContent();
     }, [reading]);
 
+    // Reset audio state when reading changes
+    useEffect(() => {
+        if (humanAudioRef.current) {
+            humanAudioRef.current.pause();
+        }
+        setIsHumanPlaying(false);
+        setHumanProgress(0);
+    }, [reading]);
+
+    const activeHumanAudioUrl = dailyChapters[activeChapterIndex]?.audioUrl || null;
+
+    const handleToggleHumanPlay = async () => {
+        const el = humanAudioRef.current;
+        if (!el || !activeHumanAudioUrl) return;
+
+        if (isHumanPlaying) {
+            el.pause();
+            setIsHumanPlaying(false);
+        } else {
+            try {
+                if (el.src !== activeHumanAudioUrl) {
+                    el.src = activeHumanAudioUrl;
+                }
+                await el.play();
+                setIsHumanPlaying(true);
+            } catch (e) {
+                console.error("Error playing human audio:", e);
+            }
+        }
+    };
+
+    const handleSelectHumanChapter = async (index: number) => {
+        setActiveChapterIndex(index);
+        setHumanProgress(0);
+        const nextUrl = dailyChapters[index]?.audioUrl;
+        const el = humanAudioRef.current;
+        if (el && nextUrl) {
+            el.src = nextUrl;
+            if (isHumanPlaying) {
+                try {
+                    await el.play();
+                } catch (e) {
+                    console.error("Error playing next chapter:", e);
+                }
+            }
+        }
+    };
+
+    const handleHumanAudioEnded = () => {
+        if (activeChapterIndex < dailyChapters.length - 1) {
+            handleSelectHumanChapter(activeChapterIndex + 1);
+        } else {
+            setIsHumanPlaying(false);
+        }
+    };
+
+    const handleHumanTimeUpdate = () => {
+        const el = humanAudioRef.current;
+        if (el && el.duration > 0) {
+            setHumanProgress((el.currentTime / el.duration) * 100);
+        }
+    };
+
+    const handleHumanSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+        const el = humanAudioRef.current;
+        if (!el || !el.duration) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        el.currentTime = ratio * el.duration;
+        setHumanProgress(ratio * 100);
+    };
+
+    const handleHumanRestart = () => {
+        const el = humanAudioRef.current;
+        if (el) {
+            el.currentTime = 0;
+            setHumanProgress(0);
+        }
+    };
+
+    const handleHumanRewind = () => {
+        const el = humanAudioRef.current;
+        if (el) {
+            el.currentTime = Math.max(0, el.currentTime - 10);
+        }
+    };
+
     const handleAudioGeneration = useCallback(async (text: string): Promise<TTSOutput | null> => {
         if (!text) return null;
         setIsAudioLoading(true);
-        setAudioProgress("Iniciando...");
+        setAudioProgress("Iniciando con IA...");
         setAudioError(null);
         try {
             const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
             return result;
         } catch (e: any) {
             const errorMessage = e.message || 'Error generando audio.';
-            if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('cuota') || errorMessage.includes('límite') || errorMessage.includes('Resource has been exhausted'))) {
-                setAudioError("Se agotó la cuota diaria del Audio IA. Puedes usar el lector del sistema o intentarlo más tarde.");
-            } else {
-                setAudioError(`Audio IA: ${errorMessage}`);
-            }
+            setAudioError(`Audio IA: ${errorMessage}`);
             return null;
         } finally {
             setIsAudioLoading(false);
             setAudioProgress(null);
         }
     }, []);
+
 
     const handleSelection = () => {
         if (isDictionaryOpen) return;
@@ -258,19 +394,124 @@ const selection = window.getSelection();
                     </div>
                 )}
 
+                {/* Hidden Human Audio element */}
+                <audio
+                  ref={humanAudioRef}
+                  src={activeHumanAudioUrl || undefined}
+                  onTimeUpdate={handleHumanTimeUpdate}
+                  onEnded={handleHumanAudioEnded}
+                  onError={() => setIsHumanPlaying(false)}
+                  style={{ display: 'none' }}
+                />
+
                 {!isTextLoading && htmlContent && (
                     <Card>
-                         <CardHeader>
-                            <CardTitle className="flex items-center gap-4">
-                                <AudioPlayer
-                                    text={textContent}
-                                    fetcher={handleAudioGeneration}
-                                    onPlay={() => trackAiApiCall('tts')}
-                                    isLoading={isAudioLoading}
-                                />
-                                {isAudioLoading ? (audioProgress || "Generando audio...") : "Escuchar Lectura"}
-                            </CardTitle>
+                         <CardHeader className="space-y-3">
+                            {/* Audio Mode Switcher */}
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1 bg-muted/70 p-1 rounded-lg text-xs font-medium">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAudioSourceMode('human')}
+                                    className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                                      audioSourceMode === 'human'
+                                        ? 'bg-background text-foreground shadow-sm font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                    title="Voz oficial pregrabada por Samuel Montoya (RVR 1909)"
+                                  >
+                                    <Mic className="h-3.5 w-3.5 text-primary" />
+                                    Locución Humana
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAudioSourceMode('ai')}
+                                    className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                                      audioSourceMode === 'ai'
+                                        ? 'bg-background text-foreground shadow-sm font-semibold'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                    title="Voz sintética neuronal de Microsoft Edge"
+                                  >
+                                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                    IA Neuronal
+                                  </button>
+                                </div>
+                            </div>
+
+                            {/* Mode 1: Human Voice Controls */}
+                            {audioSourceMode === 'human' && (
+                              <div className="flex flex-col gap-2 pt-1 border-t border-border/40">
+                                {dailyChapters.length > 1 && (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground font-medium mr-1">Capítulos:</span>
+                                    {dailyChapters.map((ch, idx) => (
+                                      <Button
+                                        key={ch.id}
+                                        size="sm"
+                                        variant={activeChapterIndex === idx ? 'default' : 'outline'}
+                                        className="h-7 text-xs px-2.5"
+                                        onClick={() => handleSelectHumanChapter(idx)}
+                                      >
+                                        {ch.reference || ch.id}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <div className="flex items-center gap-1.5">
+                                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleHumanRestart} aria-label="Reiniciar">
+                                      <RotateCcw className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleHumanRewind} aria-label="Retroceder 10s">
+                                      <Rewind className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={handleToggleHumanPlay}
+                                      disabled={!activeHumanAudioUrl}
+                                      className="flex items-center gap-1.5 min-w-[130px] justify-center h-8 text-xs font-medium"
+                                    >
+                                      {isHumanPlaying ? <><Pause className="h-4 w-4" /> Pausar</> : <><Play className="h-4 w-4" /> Reproducir</>}
+                                    </Button>
+                                  </div>
+
+                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                    🎙️ <strong className="text-foreground">Samuel Montoya</strong> (RVR 1909) - {dailyChapters[activeChapterIndex]?.reference || 'Lectura'}
+                                  </span>
+
+                                  {/* Progress Bar */}
+                                  {activeHumanAudioUrl && (
+                                    <div
+                                      className="w-full sm:w-48 h-2 bg-muted rounded-full overflow-hidden cursor-pointer ml-auto"
+                                      onClick={handleHumanSeek}
+                                      title="Haz clic para saltar"
+                                    >
+                                      <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${humanProgress}%` }} />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Mode 2: AI Neural Voice Controls */}
+                            {audioSourceMode === 'ai' && (
+                              <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                                  <AudioPlayer
+                                      text={textContent}
+                                      fetcher={handleAudioGeneration}
+                                      onPlay={() => trackAiApiCall('tts')}
+                                      isLoading={isAudioLoading}
+                                  />
+                                  <span className="text-xs md:text-sm font-medium text-muted-foreground">
+                                    {isAudioLoading ? (audioProgress || "Generando audio...") : "IA Neuronal (Microsoft Edge)"}
+                                  </span>
+                              </div>
+                            )}
                         </CardHeader>
+
                         <CardContent>
                              <div 
                                 className="prose prose-lg max-w-none font-body leading-relaxed text-justify"

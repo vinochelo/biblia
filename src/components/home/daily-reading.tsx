@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { studyPlan, type Reading } from "@/lib/study-plan";
 import { bibleVersions } from "@/lib/data";
-import { Loader2, Calendar, AlertCircle, Play, Pause, Settings, BookOpen, Type, Minus, Plus } from "lucide-react";
+import { Loader2, Calendar, AlertCircle, Play, Pause, Settings, BookOpen, Type, Minus, Plus, Mic, Sparkles, Volume2, RotateCcw, Rewind } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AudioPlayer } from "@/components/common/audio-player";
 import { type TTSOutput } from "@/ai/flows/tts-flow";
 import { trackAiApiCall, extractPlainTextFromBibleHtml } from "@/lib/utils";
+import { getHumanAudioForChapter } from "@/lib/human-audio-map";
 import { useStudyProgress } from "@/hooks/use-study-progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -22,6 +23,7 @@ import { defineTerm } from "@/ai/flows/dictionary-flow";
 import { findConcordance, type ConcordanceOutput } from "@/ai/flows/concordance-flow";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+
 const BIBLE_VERSION_STORAGE_KEY = "bible-version-id";
 const BROWSER_VOICE_URI_KEY = 'browser-tts-voice-uri';
 const BROWSER_VOICE_RATE_KEY = 'browser-tts-rate';
@@ -148,7 +150,16 @@ export function DailyReading() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [today, setToday] = useState(new Date());
 
+  // Human / AI / Browser Audio state
+  const [dailyChapters, setDailyChapters] = useState<{ id: string; reference: string; audioUrl: string | null }[]>([]);
+  const [activeChapterIndex, setActiveChapterIndex] = useState(0);
+  const [audioSourceMode, setAudioSourceMode] = useState<'human' | 'ai' | 'browser'>('human');
+  const [isHumanPlaying, setIsHumanPlaying] = useState(false);
+  const [humanProgress, setHumanProgress] = useState(0);
+  const humanAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const { isCompleted, toggleComplete } = useStudyProgress();
+
   
   const [isBrowserTtsSupported, setIsBrowserTtsSupported] = useState(false);
   const [isBrowserSpeaking, setIsBrowserSpeaking] = useState(false);
@@ -414,9 +425,15 @@ export function DailyReading() {
 
           // Fetch each chapter individually via API route (each < 3s, no timeout issues)
           let combinedContent = "";
+          const chaptersData: { id: string; reference: string; audioUrl: string | null }[] = [];
           for (const chapterId of allChapterIds) {
             const chapter = await fetchChapterWithRetry(chapterId, version);
             combinedContent += `<h3>${chapter.reference}</h3>${chapter.content}`;
+            chaptersData.push({
+              id: chapterId,
+              reference: chapter.reference,
+              audioUrl: getHumanAudioForChapter(chapterId),
+            });
           }
 
           if (!combinedContent) {
@@ -426,6 +443,8 @@ export function DailyReading() {
 
           setHtmlContent(combinedContent);
           setTextContent(extractPlainTextFromBibleHtml(combinedContent));
+          setDailyChapters(chaptersData);
+          setActiveChapterIndex(0);
         } catch (e: any) {
           console.error("Error fetching passages in daily-reading:", e);
           setError(e.message || "Error al cargar la lectura.");
@@ -435,12 +454,100 @@ export function DailyReading() {
       } else {
         setHtmlContent(null);
         setTextContent(null);
+        setDailyChapters([]);
         setIsTextLoading(false);
       }
     };
 
     fetchContent();
   }, [reading, version]);
+
+  // Reset audio on chapter or reading change
+  useEffect(() => {
+    if (humanAudioRef.current) {
+      humanAudioRef.current.pause();
+    }
+    setIsHumanPlaying(false);
+    setHumanProgress(0);
+  }, [reading, version]);
+
+  const activeHumanAudioUrl = dailyChapters[activeChapterIndex]?.audioUrl || null;
+
+  const handleToggleHumanPlay = async () => {
+    const el = humanAudioRef.current;
+    if (!el || !activeHumanAudioUrl) return;
+
+    if (isHumanPlaying) {
+      el.pause();
+      setIsHumanPlaying(false);
+    } else {
+      try {
+        if (el.src !== activeHumanAudioUrl) {
+          el.src = activeHumanAudioUrl;
+        }
+        await el.play();
+        setIsHumanPlaying(true);
+      } catch (e) {
+        console.error("Error playing human audio:", e);
+      }
+    }
+  };
+
+  const handleSelectHumanChapter = async (index: number) => {
+    setActiveChapterIndex(index);
+    setHumanProgress(0);
+    const nextUrl = dailyChapters[index]?.audioUrl;
+    const el = humanAudioRef.current;
+    if (el && nextUrl) {
+      el.src = nextUrl;
+      if (isHumanPlaying) {
+        try {
+          await el.play();
+        } catch (e) {
+          console.error("Error playing next chapter:", e);
+        }
+      }
+    }
+  };
+
+  const handleHumanAudioEnded = () => {
+    if (activeChapterIndex < dailyChapters.length - 1) {
+      handleSelectHumanChapter(activeChapterIndex + 1);
+    } else {
+      setIsHumanPlaying(false);
+    }
+  };
+
+  const handleHumanTimeUpdate = () => {
+    const el = humanAudioRef.current;
+    if (el && el.duration > 0) {
+      setHumanProgress((el.currentTime / el.duration) * 100);
+    }
+  };
+
+  const handleHumanSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = humanAudioRef.current;
+    if (!el || !el.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    el.currentTime = ratio * el.duration;
+    setHumanProgress(ratio * 100);
+  };
+
+  const handleHumanRestart = () => {
+    const el = humanAudioRef.current;
+    if (el) {
+      el.currentTime = 0;
+      setHumanProgress(0);
+    }
+  };
+
+  const handleHumanRewind = () => {
+    const el = humanAudioRef.current;
+    if (el) {
+      el.currentTime = Math.max(0, el.currentTime - 10);
+    }
+  };
 
   // Auto-dismiss audio errors after 8 seconds
   useEffect(() => {
@@ -450,28 +557,25 @@ export function DailyReading() {
     }
   }, [audioError]);
 
-  // --- AUDIO GENERATION via API Routes ---
+  // --- AUDIO GENERATION via API Routes (EdgeTTS AI) ---
   const handleAudioGeneration = useCallback(async (text: string): Promise<TTSOutput | null> => {
     if (!text) return null;
     setIsAudioLoading(true);
-    setAudioProgress("Iniciando...");
+    setAudioProgress("Iniciando con IA...");
     setAudioError(null);
     try {
       const result = await generateAudioViaApi(text, (msg) => setAudioProgress(msg));
       return result;
     } catch (e: any) {
       const errorMessage = e.message || 'Error generando audio.';
-      if (typeof errorMessage === 'string' && (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('cuota') || errorMessage.includes('límite') || errorMessage.includes('Resource has been exhausted'))) {
-        setAudioError("Se agotó la cuota diaria del Audio IA. Usa \"Leer con Navegador\" como alternativa.");
-      } else {
-        setAudioError(`Audio IA: ${errorMessage}. Puedes usar "Leer con Navegador" mientras tanto.`);
-      }
+      setAudioError(`Audio IA: ${errorMessage}`);
       return null;
     } finally {
       setIsAudioLoading(false);
       setAudioProgress(null);
     }
   }, []);
+
 
   const handleSelection = () => {
     if (isDictionaryOpen) return;
@@ -695,57 +799,176 @@ export function DailyReading() {
             )}
             {!isTextLoading && htmlContent && (
               <div className="space-y-4">
+                {/* Hidden Human Audio element */}
+                <audio
+                  ref={humanAudioRef}
+                  src={activeHumanAudioUrl || undefined}
+                  onTimeUpdate={handleHumanTimeUpdate}
+                  onEnded={handleHumanAudioEnded}
+                  onError={() => setIsHumanPlaying(false)}
+                  style={{ display: 'none' }}
+                />
+
                 {/* Toolbar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-secondary/50 border border-border/50">
-                    {/* Audio IA */}
-                    <div className="flex items-center gap-2">
-                        <AudioPlayer
-                            text={textContent}
-                            fetcher={handleAudioGeneration}
-                            onPlay={() => trackAiApiCall('tts')}
-                            isLoading={isAudioLoading}
-                        />
-                         <span className="text-xs md:text-sm font-medium text-muted-foreground hidden sm:inline">{isAudioLoading ? (audioProgress || "Generando...") : "Audio IA"}</span>
+                <div className="flex flex-col gap-3 p-3 rounded-xl bg-secondary/50 border border-border/50">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        {/* Audio Mode Switcher */}
+                        <div className="flex items-center gap-1 bg-muted/70 p-1 rounded-lg text-xs font-medium">
+                          <button
+                            type="button"
+                            onClick={() => setAudioSourceMode('human')}
+                            className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                              audioSourceMode === 'human'
+                                ? 'bg-background text-foreground shadow-sm font-semibold'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title="Voz oficial pregrabada por Samuel Montoya (RVR 1909)"
+                          >
+                            <Mic className="h-3.5 w-3.5 text-primary" />
+                            Locución Humana
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAudioSourceMode('ai')}
+                            className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                              audioSourceMode === 'ai'
+                                ? 'bg-background text-foreground shadow-sm font-semibold'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                            title="Voz sintética neuronal de Microsoft Edge"
+                          >
+                            <Sparkles className="h-3.5 w-3.5 text-primary" />
+                            IA Neuronal
+                          </button>
+                          {isBrowserTtsSupported && (
+                            <button
+                              type="button"
+                              onClick={() => setAudioSourceMode('browser')}
+                              className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                                audioSourceMode === 'browser'
+                                  ? 'bg-background text-foreground shadow-sm font-semibold'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                              title="Lector del sistema operativo"
+                            >
+                              <Volume2 className="h-3.5 w-3.5" />
+                              Navegador
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Font Size Controls */}
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => cycleFontSize('down')}
+                                disabled={fontSize === 'sm'}
+                                aria-label="Reducir tamaño de letra"
+                            >
+                                <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <span className="text-xs font-sans font-medium text-muted-foreground w-8 text-center select-none">
+                                <Type className="h-3.5 w-3.5 inline" />
+                            </span>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => cycleFontSize('up')}
+                                disabled={fontSize === 'lg'}
+                                aria-label="Aumentar tamaño de letra"
+                            >
+                                <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
                     </div>
 
-                    {/* Browser TTS */}
-                    {isBrowserTtsSupported && (
-                        <div className="flex items-center gap-1.5">
-                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
-                                {isBrowserSpeaking ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    {/* Mode 1: Human Voice Controls */}
+                    {audioSourceMode === 'human' && (
+                      <div className="flex flex-col gap-2 pt-1 border-t border-border/40">
+                        {dailyChapters.length > 1 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground font-medium mr-1">Capítulos:</span>
+                            {dailyChapters.map((ch, idx) => (
+                              <Button
+                                key={ch.id}
+                                size="sm"
+                                variant={activeChapterIndex === idx ? 'default' : 'outline'}
+                                className="h-7 text-xs px-2.5"
+                                onClick={() => handleSelectHumanChapter(idx)}
+                              >
+                                {ch.reference || ch.id}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-1.5">
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleHumanRestart} aria-label="Reiniciar">
+                              <RotateCcw className="h-4 w-4" />
                             </Button>
-                            <span className="text-xs font-medium text-muted-foreground hidden sm:inline">{browserTtsLabel}</span>
-                            {BrowserTtsSettings}
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleHumanRewind} aria-label="Retroceder 10s">
+                              <Rewind className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={handleToggleHumanPlay}
+                              disabled={!activeHumanAudioUrl}
+                              className="flex items-center gap-1.5 min-w-[130px] justify-center h-8 text-xs font-medium"
+                            >
+                              {isHumanPlaying ? <><Pause className="h-4 w-4" /> Pausar</> : <><Play className="h-4 w-4" /> Reproducir</>}
+                            </Button>
+                          </div>
+
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            🎙️ <strong className="text-foreground">Samuel Montoya</strong> (RVR 1909) - {dailyChapters[activeChapterIndex]?.reference || 'Lectura'}
+                          </span>
+
+                          {/* Progress Bar */}
+                          {activeHumanAudioUrl && (
+                            <div
+                              className="w-full sm:w-48 h-2 bg-muted rounded-full overflow-hidden cursor-pointer ml-auto"
+                              onClick={handleHumanSeek}
+                              title="Haz clic para saltar"
+                            >
+                              <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${humanProgress}%` }} />
+                            </div>
+                          )}
                         </div>
+                      </div>
                     )}
 
-                    {/* Font Size Controls */}
-                    <div className="flex items-center gap-1.5 ml-auto">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => cycleFontSize('down')}
-                            disabled={fontSize === 'sm'}
-                            aria-label="Reducir tamaño de letra"
-                        >
-                            <Minus className="h-3.5 w-3.5" />
-                        </Button>
-                        <span className="text-xs font-sans font-medium text-muted-foreground w-8 text-center select-none">
-                            <Type className="h-3.5 w-3.5 inline" />
-                        </span>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => cycleFontSize('up')}
-                            disabled={fontSize === 'lg'}
-                            aria-label="Aumentar tamaño de letra"
-                        >
-                            <Plus className="h-3.5 w-3.5" />
-                        </Button>
-                    </div>
+                    {/* Mode 2: AI Neural Voice Controls */}
+                    {audioSourceMode === 'ai' && (
+                      <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                          <AudioPlayer
+                              text={textContent}
+                              fetcher={handleAudioGeneration}
+                              onPlay={() => trackAiApiCall('tts')}
+                              isLoading={isAudioLoading}
+                          />
+                          <span className="text-xs md:text-sm font-medium text-muted-foreground">
+                            {isAudioLoading ? (audioProgress || "Generando...") : "IA Neuronal (Microsoft Edge)"}
+                          </span>
+                      </div>
+                    )}
+
+                    {/* Mode 3: Browser TTS Controls */}
+                    {audioSourceMode === 'browser' && isBrowserTtsSupported && (
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleBrowserSpeech} disabled={!textContent || isAudioLoading}>
+                              {isBrowserSpeaking ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                          </Button>
+                          <span className="text-xs font-medium text-muted-foreground">{browserTtsLabel}</span>
+                          {BrowserTtsSettings}
+                      </div>
+                    )}
                 </div>
+
 
                 {/* Bible text content */}
                  <div 
