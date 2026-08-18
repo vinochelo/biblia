@@ -88,10 +88,10 @@ async function fetchChapter(versionId: string, chapterId: string): Promise<{ ref
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const chapterId = searchParams.get("chapterId");
-  const version = searchParams.get("version");
+  const version = searchParams.get("version") || searchParams.get("versionId") || "592420522e16049f-01";
 
-  if (!chapterId || !version) {
-    return NextResponse.json({ error: "Faltan parámetros: chapterId y version son requeridos." }, { status: 400 });
+  if (!chapterId) {
+    return NextResponse.json({ error: "Falta parámetro: chapterId es requerido." }, { status: 400 });
   }
 
   try {
@@ -121,11 +121,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { passages, version } = body;
+    const { passages } = body;
+    const version = body.version || body.versionId || "592420522e16049f-01";
 
-    if (!passages || !version || !Array.isArray(passages)) {
-      return NextResponse.json({ error: "Faltan parámetros." }, { status: 400 });
+    if (!passages || !Array.isArray(passages)) {
+      return NextResponse.json({ error: "Falta parámetro: passages array es requerido." }, { status: 400 });
     }
+
 
     const allChapterIds: { passageRef: string; chapterId: string }[] = [];
 

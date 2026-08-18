@@ -73,7 +73,7 @@ function parsePassageToChapterIds(passage: string): string[] {
 async function fetchChapterWithRetry(chapterId: string, versionId: string, retries = 2) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(`/api/passages?chapterId=${encodeURIComponent(chapterId)}&versionId=${encodeURIComponent(versionId)}`);
+      const res = await fetch(`/api/passages?chapterId=${encodeURIComponent(chapterId)}&version=${encodeURIComponent(versionId)}&versionId=${encodeURIComponent(versionId)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -85,6 +85,7 @@ async function fetchChapterWithRetry(chapterId: string, versionId: string, retri
   }
   throw new Error("Falló después de reintentos");
 }
+
 
 // --- Helper: Full TTS via API Routes ---
 async function generateAudioViaApi(
